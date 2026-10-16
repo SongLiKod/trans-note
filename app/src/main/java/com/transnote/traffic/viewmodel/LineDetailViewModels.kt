@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.transnote.traffic.data.database.BusLineEntity
 import com.transnote.traffic.data.database.BusStationEntity
 import com.transnote.traffic.data.database.BusStationWithTransfers
+import com.transnote.traffic.data.database.MetroEntranceEntity
 import com.transnote.traffic.data.database.MetroLineEntity
 import com.transnote.traffic.data.database.MetroStationWithEntrances
 import com.transnote.traffic.data.database.StationMarkerEntity
@@ -236,6 +237,12 @@ class MetroLineDetailViewModel(
     private val _transfers = MutableStateFlow<Map<Long, List<MetroTransferLine>>>(emptyMap())
     val transfers: StateFlow<Map<Long, List<MetroTransferLine>>> = _transfers.asStateFlow()
 
+    // ---- 出入口刷新：从高德获取某站最新出入口（含门址 / 道路、坐标） ----
+    private val _exitsBusy = MutableStateFlow(false)
+    val exitsBusy: StateFlow<Boolean> = _exitsBusy.asStateFlow()
+    private val _exitsMessage = MutableStateFlow<String?>(null)
+    val exitsMessage: StateFlow<String?> = _exitsMessage.asStateFlow()
+
     val uiState: StateFlow<MetroLineDetailUiState> = combine(
         repo.observeMetroLine(lineId),
         mapContext,
@@ -283,6 +290,79 @@ class MetroLineDetailViewModel(
         val list = uiState.value.stations.map { it.station }
         val moved = DragReorder.move(list, from, to)
         viewModelScope.launch { repo.reorderMetroStations(moved) }
+    }
+
+    fun consumeExitsMessage() {
+        _exitsMessage.value = null
+    }
+
+    /**
+     * 刷新某站出入口：从高德获取最新出入口，
+     * 新增缺失的出入口，并为已有出入口补充道路（门址）与坐标信息。
+     */
+    fun refreshStationExits(key: String, stationId: Long) {
+        if (key.isBlank()) {
+            _exitsMessage.value = "请先在「设置 → 高德地图 API」填写 Key"
+            return
+        }
+        if (_exitsBusy.value) return
+        viewModelScope.launch {
+            _exitsBusy.value = true
+            _exitsMessage.value = "正在从高德获取出入口…"
+            val station = repo.getMetroStation(stationId)
+            if (station == null) {
+                _exitsMessage.value = "站点不存在"
+                _exitsBusy.value = false
+                return@launch
+            }
+            val city = repo.getMetroLine(station.lineId)?.let { repo.getCityName(it.cityId) }.orEmpty()
+            val exits = AmapApi.searchMetroExits(
+                key, station.name, station.latitude ?: 0.0, station.longitude ?: 0.0, city
+            )
+            if (exits.isEmpty()) {
+                _exitsMessage.value = "未从高德获取到出入口信息"
+                _exitsBusy.value = false
+                return@launch
+            }
+            val existing = repo.getEntrances(stationId)
+            val byName = existing.associateBy { it.name }
+            var added = 0
+            var filled = 0
+            exits.forEach { exit ->
+                val match = byName[exit.name]
+                if (match == null) {
+                    repo.saveEntrance(
+                        MetroEntranceEntity(
+                            metroStationId = stationId,
+                            name = exit.name,
+                            road = exit.road,
+                            landmark = exit.landmark,
+                            latitude = exit.latitude,
+                            longitude = exit.longitude
+                        )
+                    )
+                    added++
+                } else {
+                    val patched = match.copy(
+                        road = exit.road.ifBlank { match.road },
+                        landmark = match.landmark.ifBlank { exit.landmark },
+                        latitude = match.latitude ?: exit.latitude,
+                        longitude = match.longitude ?: exit.longitude
+                    )
+                    if (patched != match) {
+                        repo.saveEntrance(patched)
+                        filled++
+                    }
+                }
+            }
+            _exitsMessage.value = when {
+                added == 0 && filled == 0 -> "已是最新，共 ${exits.size} 个出入口"
+                filled == 0 -> "已获取最新，新增 $added 个出入口"
+                added == 0 -> "已补充 $filled 个出入口信息"
+                else -> "新增 $added 个、补充 $filled 个出入口信息"
+            }
+            _exitsBusy.value = false
+        }
     }
 
     fun toggleFavorite() {

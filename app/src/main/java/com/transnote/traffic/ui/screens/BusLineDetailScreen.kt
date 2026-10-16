@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -63,6 +62,7 @@ import com.transnote.traffic.data.database.BusStationWithTransfers
 import com.transnote.traffic.data.database.StationMarkerEntity
 import com.transnote.traffic.repository.PassingBusLine
 import com.transnote.traffic.repository.TransNoteRepository
+import com.transnote.traffic.ui.components.CollapsibleTrackMapLayout
 import com.transnote.traffic.ui.components.ConfirmDialog
 import com.transnote.traffic.utils.AmapBusLine
 import com.transnote.traffic.ui.components.DragReorderColumn
@@ -72,7 +72,6 @@ import com.transnote.traffic.ui.components.MapSearchItem
 import com.transnote.traffic.ui.components.MarkerIconRow
 import com.transnote.traffic.ui.components.SectionTitle
 import com.transnote.traffic.ui.components.StationTimelineRow
-import com.transnote.traffic.ui.components.StationTrackMap
 import com.transnote.traffic.ui.components.TimetableContent
 import com.transnote.traffic.ui.components.TransferTag
 import com.transnote.traffic.ui.components.TransNoteCard
@@ -201,9 +200,32 @@ fun BusLineDetailScreen(
             )
         }
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+        CollapsibleTrackMapLayout(
+            points = state.stations.mapNotNull { wrapper ->
+                val s = wrapper.station
+                if (CoordinateUtils.isValid(s.latitude, s.longitude)) {
+                    MapPoint(
+                        latitude = s.latitude!!,
+                        longitude = s.longitude!!,
+                        title = s.name,
+                        isTransfer = s.isMetroTransfer,
+                        key = s.id,
+                        colorHex = s.colorHex,
+                        markers = state.mapContext.markerNames(s.markerIds)
+                    )
+                } else null
+            },
+            selectedKey = selectedKey,
+            onSelectKey = { selectedKey = it },
+            defaultCenter = state.mapContext.cityCenter,
+            searchItems = state.mapContext.searchStations.map {
+                MapSearchItem(it.name, it.latitude, it.longitude, it.subtitle, it.markers)
+            },
+            lineColor = lineColor,
+            modifier = Modifier.padding(padding)
+        ) { listModifier ->
         LazyColumn(
-            modifier = Modifier.weight(1f),
+            modifier = listModifier,
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -419,34 +441,6 @@ fun BusLineDetailScreen(
 
             item { Spacer(Modifier.height(24.dp)) }
         }
-        // 固定在底部的线路轨迹地图：始终可见、可拖动缩放；点击站点时居中该站
-        StationTrackMap(
-            points = state.stations.mapNotNull { wrapper ->
-                val s = wrapper.station
-                if (CoordinateUtils.isValid(s.latitude, s.longitude)) {
-                    MapPoint(
-                        latitude = s.latitude!!,
-                        longitude = s.longitude!!,
-                        title = s.name,
-                        isTransfer = s.isMetroTransfer,
-                        key = s.id,
-                        colorHex = s.colorHex,
-                        markers = state.mapContext.markerNames(s.markerIds)
-                    )
-                } else null
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(220.dp)
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            selectedKey = selectedKey,
-            onSelectKey = { selectedKey = it },
-            defaultCenter = state.mapContext.cityCenter,
-            searchItems = state.mapContext.searchStations.map {
-                MapSearchItem(it.name, it.latitude, it.longitude, it.subtitle, it.markers)
-            },
-            lineColor = lineColor
-        )
         }
     }
 

@@ -1,6 +1,5 @@
 package com.transnote.traffic.ui.screens
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -51,6 +50,7 @@ import com.transnote.traffic.ui.components.MapPickerDialog
 import com.transnote.traffic.ui.components.MapPoint
 import com.transnote.traffic.ui.components.MarkerManagerDialog
 import com.transnote.traffic.ui.components.MarkerSelector
+import com.transnote.traffic.ui.components.MetroEntranceListDialog
 import com.transnote.traffic.ui.components.SectionTitle
 import com.transnote.traffic.ui.components.StationTrackMap
 import com.transnote.traffic.ui.components.TransNoteCard
@@ -81,6 +81,8 @@ fun MetroStationDetailScreen(
     val entrances by viewModel.entrances.collectAsStateWithLifecycle()
     val markers by viewModel.markers.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val amapKey by container.themeManager.amapKey
+        .collectAsStateWithLifecycle(initialValue = "")
     val stationColor = LineColors.station(
         editor.colorHex,
         editor.lineColorHex,
@@ -88,6 +90,7 @@ fun MetroStationDetailScreen(
     )
 
     var showMapPicker by remember { mutableStateOf(false) }
+    var showEntranceList by remember { mutableStateOf(false) }
     var showAddEntrance by remember { mutableStateOf(false) }
     var showMarkerManager by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -264,58 +267,34 @@ fun MetroStationDetailScreen(
             }
 
             Spacer(Modifier.height(20.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SectionTitle("出入口（${entrances.size}）", modifier = Modifier.weight(1f))
-                IconButton(onClick = { showAddEntrance = true }) {
+            SectionTitle("出入口")
+            TransNoteCard(onClick = { showEntranceList = true }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        Icons.Filled.Add,
-                        contentDescription = "新增出入口",
+                        Icons.Filled.Login,
+                        contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary
                     )
-                }
-            }
-            if (entrances.isEmpty()) {
-                Text(
-                    "暂未添加入口，点击右上角 + 新增 A口 / 1号口等出入口",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TransNoteTheme.colors.hintText
-                )
-            } else {
-                entrances.forEach { entrance ->
-                    TransNoteCard(
-                        modifier = Modifier.padding(vertical = 4.dp),
-                        onClick = { onOpenEntrance(entrance.metroStationId, entrance.id) }
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Filled.Login,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(entrance.name, style = MaterialTheme.typography.titleMedium)
-                                val sub = listOf(entrance.road, entrance.landmark, entrance.note)
-                                    .filter { it.isNotBlank() }.joinToString(" · ")
-                                if (sub.isNotBlank()) {
-                                    Text(
-                                        sub,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = TransNoteTheme.colors.hintText,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                            IconButton(onClick = { pendingDeleteEntrance = entrance }) {
-                                Icon(
-                                    Icons.Filled.Delete,
-                                    contentDescription = "删除出入口",
-                                    tint = TransNoteTheme.colors.danger
-                                )
-                            }
-                        }
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "出入口（${entrances.size}）",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            if (entrances.isEmpty()) "点击查看 / 新增 / 从高德获取"
+                            else entrances.joinToString("、") { it.name },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TransNoteTheme.colors.hintText,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
+                    Text(
+                        "查看 ›",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -336,6 +315,27 @@ fun MetroStationDetailScreen(
         MarkerManagerDialog(
             repository = container.repository,
             onDismiss = { showMarkerManager = false }
+        )
+    }
+
+    if (showEntranceList) {
+        MetroEntranceListDialog(
+            entrances = entrances,
+            emptyHint = "暂无出入口，可点下方「从高德获取」自动抓取，或「新增出入口」手动添加。",
+            onOpen = { entrance ->
+                showEntranceList = false
+                onOpenEntrance(entrance.metroStationId, entrance.id)
+            },
+            onDelete = { pendingDeleteEntrance = it },
+            onDismiss = { showEntranceList = false },
+            secondaryActions = {
+                TextButton(onClick = { viewModel.importExitsFromAmap(amapKey) }) {
+                    Text("从高德获取")
+                }
+                TextButton(onClick = { showEntranceList = false; showAddEntrance = true }) {
+                    Text("新增出入口")
+                }
+            }
         )
     }
 

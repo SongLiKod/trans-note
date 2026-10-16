@@ -30,7 +30,6 @@ import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
@@ -98,19 +97,17 @@ fun HomeScreen(
             TransNoteTopBar(
                 title = "途记交通备忘录",
                 actions = {
+                    IconButton(onClick = { showNewLineDialog = true }) {
+                        Icon(
+                            Icons.Filled.Add,
+                            contentDescription = "新增线路",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     IconButton(onClick = onOpenSearch) {
                         Icon(Icons.Filled.Search, contentDescription = "搜索")
                     }
                 }
-            )
-        },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showNewLineDialog = true },
-                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                text = { Text("新增线路") },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
             )
         }
     ) { padding ->
@@ -470,7 +467,7 @@ private fun BusLineList(
     if (lines.isEmpty()) {
         EmptyState(
             title = "还没有公交线路",
-            hint = "点击右下角「新增线路」手动录入，或在录入页拍照识别站牌",
+            hint = "点击右上角「+」手动录入，或在录入页拍照识别站牌",
             icon = Icons.Filled.DirectionsBus
         )
         return
@@ -531,7 +528,7 @@ private fun MetroLineList(
     if (lines.isEmpty()) {
         EmptyState(
             title = "还没有地铁线路",
-            hint = "点击右下角「新增线路」录入地铁线路与出入口",
+            hint = "点击右上角「+」录入地铁线路与出入口",
             icon = Icons.Filled.DirectionsSubway
         )
         return

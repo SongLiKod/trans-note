@@ -6,10 +6,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -28,6 +28,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -47,16 +48,16 @@ import com.transnote.traffic.AppContainer
 import com.transnote.traffic.data.database.MetroStationWithEntrances
 import com.transnote.traffic.data.database.StationMarkerEntity
 import com.transnote.traffic.repository.MetroTransferLine
+import com.transnote.traffic.ui.components.CollapsibleTrackMapLayout
 import com.transnote.traffic.ui.components.ConfirmDialog
 import com.transnote.traffic.ui.components.DragReorderColumn
 import com.transnote.traffic.ui.components.LabeledTextField
 import com.transnote.traffic.ui.components.MapPoint
 import com.transnote.traffic.ui.components.MapSearchItem
 import com.transnote.traffic.ui.components.MarkerIconRow
+import com.transnote.traffic.ui.components.MetroEntranceListDialog
 import com.transnote.traffic.ui.components.SectionTitle
 import com.transnote.traffic.ui.components.StationTimelineRow
-import com.transnote.traffic.ui.components.StationTrackMap
-import com.transnote.traffic.ui.components.Tag
 import com.transnote.traffic.ui.components.TimetableContent
 import com.transnote.traffic.ui.components.TransferColorBadge
 import com.transnote.traffic.ui.components.TransNoteCard
@@ -95,7 +96,13 @@ fun MetroLineDetailScreen(
     var pendingDeleteStation by remember { mutableStateOf<Pair<Long, String>?>(null) }
     // 点击站点后在（固定在底部的）地图上高亮并居中
     var selectedKey by remember { mutableStateOf<Long?>(null) }
+    // 「出口」按钮点击后弹出该站出入口列表（存站点 id，随数据库实时刷新）
+    var entranceStationId by remember { mutableStateOf<Long?>(null) }
+    val entranceStation = state.stations.firstOrNull { it.station.id == entranceStationId }
     val transfers by viewModel.transfers.collectAsStateWithLifecycle()
+    val exitsBusy by viewModel.exitsBusy.collectAsStateWithLifecycle()
+    val exitsMessage by viewModel.exitsMessage.collectAsStateWithLifecycle()
+    val amapKey by container.themeManager.amapKey.collectAsStateWithLifecycle(initialValue = "")
 
     Scaffold(
         topBar = {
@@ -154,9 +161,33 @@ fun MetroLineDetailScreen(
             )
         }
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+        CollapsibleTrackMapLayout(
+            points = state.stations.mapNotNull { wrapper ->
+                val s = wrapper.station
+                if (CoordinateUtils.isValid(s.latitude, s.longitude)) {
+                    MapPoint(
+                        latitude = s.latitude!!,
+                        longitude = s.longitude!!,
+                        title = s.name,
+                        isTransfer = wrapper.entrances.isNotEmpty(),
+                        key = s.id,
+                        colorHex = s.colorHex,
+                        markers = state.mapContext.markerNames(s.markerIds)
+                    )
+                } else null
+            },
+            selectedKey = selectedKey,
+            onSelectKey = { selectedKey = it },
+            defaultCenter = state.mapContext.cityCenter,
+            searchItems = state.mapContext.searchStations.map {
+                MapSearchItem(it.name, it.latitude, it.longitude, it.subtitle, it.markers)
+            },
+            emptyHint = "为地铁站点设置地图坐标后将在此绘制轨迹",
+            lineColor = lineColor,
+            modifier = Modifier.padding(padding)
+        ) { listModifier ->
         LazyColumn(
-            modifier = Modifier.weight(1f),
+            modifier = listModifier,
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -262,7 +293,11 @@ fun MetroLineDetailScreen(
                             transfers = transfers[wrapper.station.id].orEmpty(),
                             onClick = { onOpenStation(wrapper.station.id) },
                             onSelect = {},
-                            onDelete = { pendingDeleteStation = wrapper.station.id to wrapper.station.name }
+                            onDelete = { pendingDeleteStation = wrapper.station.id to wrapper.station.name },
+                            onOpenEntrances = {
+                                viewModel.consumeExitsMessage()
+                                entranceStationId = wrapper.station.id
+                            }
                         )
                     }
                 } else {
@@ -282,7 +317,11 @@ fun MetroLineDetailScreen(
                                 transfers = transfers[wrapper.station.id].orEmpty(),
                                 onClick = { onOpenStation(wrapper.station.id) },
                                 onSelect = { selectedKey = wrapper.station.id },
-                                onDelete = {}
+                                onDelete = {},
+                                onOpenEntrances = {
+                                    viewModel.consumeExitsMessage()
+                                    entranceStationId = wrapper.station.id
+                                }
                             )
                         }
                     }
@@ -291,35 +330,6 @@ fun MetroLineDetailScreen(
 
             item { Spacer(Modifier.height(24.dp)) }
         }
-        // 固定在底部的线路轨迹地图：始终可见、可拖动缩放；点击站点时居中该站
-        StationTrackMap(
-            points = state.stations.mapNotNull { wrapper ->
-                val s = wrapper.station
-                if (CoordinateUtils.isValid(s.latitude, s.longitude)) {
-                    MapPoint(
-                        latitude = s.latitude!!,
-                        longitude = s.longitude!!,
-                        title = s.name,
-                        isTransfer = wrapper.entrances.isNotEmpty(),
-                        key = s.id,
-                        colorHex = s.colorHex,
-                        markers = state.mapContext.markerNames(s.markerIds)
-                    )
-                } else null
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(220.dp)
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            selectedKey = selectedKey,
-            onSelectKey = { selectedKey = it },
-            defaultCenter = state.mapContext.cityCenter,
-            searchItems = state.mapContext.searchStations.map {
-                MapSearchItem(it.name, it.latitude, it.longitude, it.subtitle, it.markers)
-            },
-            emptyHint = "为地铁站点设置地图坐标后将在此绘制轨迹",
-            lineColor = lineColor
-        )
         }
     }
 
@@ -382,6 +392,21 @@ fun MetroLineDetailScreen(
             onDismiss = { pendingDeleteStation = null }
         )
     }
+
+    entranceStation?.let { station ->
+        MetroEntranceListDialog(
+            entrances = station.entrances,
+            title = "${station.station.name} 出入口（${station.entrances.size}）",
+            emptyHint = "本站暂无出入口，点右上角刷新可从高德获取，或进入站点详情手动新增。",
+            busy = exitsBusy,
+            message = exitsMessage,
+            onRefresh = { viewModel.refreshStationExits(amapKey, station.station.id) },
+            onDismiss = {
+                entranceStationId = null
+                viewModel.consumeExitsMessage()
+            }
+        )
+    }
 }
 
 /** 地铁站点行（线路图圆点样式）。只读模式下点击可在地图定位高亮。 */
@@ -400,7 +425,8 @@ private fun MetroStationTimelineItem(
     transfers: List<MetroTransferLine>,
     onClick: () -> Unit,
     onSelect: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onOpenEntrances: () -> Unit
 ) {
     val station = wrapper.station
     val markerNames = markers.filter { it.id in station.markerIds }.map { it.name }
@@ -415,6 +441,7 @@ private fun MetroStationTimelineItem(
         pointColor = LineColors.station(station.colorHex, lineColorHex, lineColor),
         onClick = if (editMode) onClick else onSelect,
         trailing = {
+            EntranceButton(count = wrapper.entrances.size, onClick = onOpenEntrances)
             if (editMode) {
                 Icon(
                     Icons.Filled.DragHandle,
@@ -472,15 +499,28 @@ private fun MetroStationTimelineItem(
                 }
             }
         }
+    }
+}
+
+/** 站点行尾的「出口」按钮：点击弹出该站出入口列表弹层 */
+@Composable
+private fun EntranceButton(count: Int, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.small,
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+    ) {
+        Icon(
+            Icons.Filled.Login,
+            contentDescription = "出入口",
+            modifier = Modifier.size(16.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(Modifier.width(4.dp))
         Text(
-            "出入口 ${wrapper.entrances.size} 个" +
-                if (wrapper.entrances.isNotEmpty()) {
-                    "：" + wrapper.entrances.joinToString("、") { it.name }
-                } else "",
-            style = MaterialTheme.typography.bodySmall,
-            color = TransNoteTheme.colors.hintText,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            if (count > 0) "出口 $count" else "出口",
+            style = MaterialTheme.typography.labelMedium
         )
     }
 }
+

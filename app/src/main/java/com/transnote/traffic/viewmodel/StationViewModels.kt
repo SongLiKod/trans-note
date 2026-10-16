@@ -9,6 +9,7 @@ import com.transnote.traffic.data.database.MetroLineEntity
 import com.transnote.traffic.data.database.MetroStationEntity
 import com.transnote.traffic.data.database.StationMarkerEntity
 import com.transnote.traffic.repository.TransNoteRepository
+import com.transnote.traffic.utils.AmapApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -357,6 +358,67 @@ class MetroStationViewModel(
         if (name.isBlank()) return
         viewModelScope.launch {
             repo.saveEntrance(MetroEntranceEntity(metroStationId = stationId, name = name.trim()))
+        }
+    }
+
+    /** 从高德 POI（地铁出入口 150501）自动获取并新增该站的出入口（按名称去重，并补充道路 / 坐标） */
+    fun importExitsFromAmap(key: String) {
+        if (key.isBlank()) {
+            _editor.update { it.copy(message = "请先在「设置 → 高德地图 API」填写 Key") }
+            return
+        }
+        viewModelScope.launch {
+            val s = _editor.value
+            _editor.update { it.copy(message = "正在从高德获取出入口…") }
+            val city = repo.getMetroLine(s.lineId)?.let { repo.getCityName(it.cityId) }.orEmpty()
+            val exits = AmapApi.searchMetroExits(
+                key, s.name, s.latitude ?: 0.0, s.longitude ?: 0.0, city
+            )
+            if (exits.isEmpty()) {
+                _editor.update { it.copy(message = "未从高德获取到出入口，可手动添加") }
+                return@launch
+            }
+            val existing = repo.getEntrances(stationId)
+            val byName = existing.associateBy { it.name }
+            var added = 0
+            var filled = 0
+            exits.forEach { exit ->
+                val match = byName[exit.name]
+                if (match == null) {
+                    repo.saveEntrance(
+                        MetroEntranceEntity(
+                            metroStationId = stationId,
+                            name = exit.name,
+                            road = exit.road,
+                            landmark = exit.landmark,
+                            latitude = exit.latitude,
+                            longitude = exit.longitude
+                        )
+                    )
+                    added++
+                } else {
+                    val patched = match.copy(
+                        road = exit.road.ifBlank { match.road },
+                        landmark = match.landmark.ifBlank { exit.landmark },
+                        latitude = match.latitude ?: exit.latitude,
+                        longitude = match.longitude ?: exit.longitude
+                    )
+                    if (patched != match) {
+                        repo.saveEntrance(patched)
+                        filled++
+                    }
+                }
+            }
+            _editor.update {
+                it.copy(
+                    message = when {
+                        added == 0 && filled == 0 -> "出入口已是最新"
+                        filled == 0 -> "已添加 $added 个出入口"
+                        added == 0 -> "已补充 $filled 个出入口信息"
+                        else -> "已添加 $added 个、补充 $filled 个出入口信息"
+                    }
+                )
+            }
         }
     }
 
