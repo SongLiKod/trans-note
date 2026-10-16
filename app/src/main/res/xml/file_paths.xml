@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 相机拍照临时输出目录 -->
+    <cache-path
+        name="camera_cache"
+        path="camera/" />
+    <external-cache-path
+        name="camera_external_cache"
+        path="camera/" />
+    <!-- 站点图片目录（App 私有存储） -->
+    <files-path
+        name="images"
+        path="images/" />
+</paths>

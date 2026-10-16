@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 全量备份规则：数据存储在 App 私有目录，云端备份不包含图片（依赖本地 ZIP 备份） -->
+<full-backup-content>
+    <include domain="database" path="." />
+    <include domain="sharedpref" path="." />
+    <exclude domain="file" path="images/" />
+</full-backup-content>
