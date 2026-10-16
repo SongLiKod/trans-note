@@ -6,6 +6,8 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.text.TextPaint
+import android.text.TextUtils
 import android.view.MotionEvent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -69,7 +71,9 @@ data class MapPoint(
     /** 稳定标识（站点 id），用于点击站点后在地图上高亮跟随 */
     val key: Long = 0L,
     /** 站点自定义颜色（HEX）；空表示跟随线路颜色 */
-    val colorHex: String = ""
+    val colorHex: String = "",
+    /** 站点标记名称（多选），显示在选中站点的地图气泡中 */
+    val markers: List<String> = emptyList()
 )
 
 /** 地图内搜索用的站点（默认限定当前城市） */
@@ -77,7 +81,8 @@ data class MapSearchItem(
     val name: String,
     val latitude: Double,
     val longitude: Double,
-    val subtitle: String = ""
+    val subtitle: String = "",
+    val markers: List<String> = emptyList()
 )
 
 /** 搜索聚焦点使用的合成 key */
@@ -137,6 +142,7 @@ private class TrackOverlay(
     private val transferColor: Int,
     private val highlightColor: Int,
     private val labelTextColor: Int,
+    private val labelSubTextColor: Int,
     private val labelBgColor: Int,
     private val drawTrack: Boolean,
     private val onTapStation: ((Long) -> Unit)?
@@ -187,11 +193,18 @@ private class TrackOverlay(
             color = labelBgColor
             style = Paint.Style.FILL
         }
-        val labelText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        val maxTextWidth = canvas.width * 0.7f
+        val labelText = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = labelTextColor
             textSize = 12f * density
             textAlign = Paint.Align.CENTER
             typeface = Typeface.DEFAULT_BOLD
+        }
+        val markerText = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = labelSubTextColor
+            textSize = 10f * density
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.DEFAULT
         }
 
         pts.forEachIndexed { i, p ->
@@ -210,24 +223,43 @@ private class TrackOverlay(
             canvas.drawCircle(p.x.toFloat(), p.y.toFloat(), radius, dot)
 
             if (selected && station.title.isNotBlank()) {
-                val halfWidth = labelText.measureText(station.title) / 2f
+                // 气泡：第一行为站名，第二行为站点标记（多选），均做超宽省略
+                val titleLine = TextUtils.ellipsize(
+                    station.title, labelText, maxTextWidth, TextUtils.TruncateAt.END
+                ).toString()
+                val markerLine = station.markers.joinToString(" · ")
+                val hasMarkers = markerLine.isNotBlank()
+                val subLine = if (hasMarkers) {
+                    TextUtils.ellipsize(
+                        markerLine, markerText, maxTextWidth, TextUtils.TruncateAt.END
+                    ).toString()
+                } else {
+                    ""
+                }
                 val padH = 6f * density
                 val padV = 4f * density
-                val textHeight = labelText.textSize
-                val top = p.y - radius - 10f * density - textHeight - padV * 2
+                val lineGap = 2f * density
+                val contentWidth = maxOf(
+                    labelText.measureText(titleLine),
+                    if (hasMarkers) markerText.measureText(subLine) else 0f
+                )
+                val contentHeight = labelText.textSize +
+                    if (hasMarkers) lineGap + markerText.textSize else 0f
+                val halfWidth = contentWidth / 2f + padH
+                val top = p.y - radius - 10f * density - contentHeight - padV * 2
                 val rect = RectF(
-                    p.x - halfWidth - padH,
+                    p.x - halfWidth,
                     top,
-                    p.x + halfWidth + padH,
-                    top + textHeight + padV * 2
+                    p.x + halfWidth,
+                    top + contentHeight + padV * 2
                 )
                 canvas.drawRoundRect(rect, 6f * density, 6f * density, labelBg)
-                canvas.drawText(
-                    station.title,
-                    p.x.toFloat(),
-                    rect.bottom - padV - labelText.descent(),
-                    labelText
-                )
+                var baseline = top + padV + labelText.textSize - labelText.descent()
+                canvas.drawText(titleLine, p.x.toFloat(), baseline, labelText)
+                if (hasMarkers) {
+                    baseline += lineGap + markerText.textSize
+                    canvas.drawText(subLine, p.x.toFloat(), baseline, markerText)
+                }
             }
         }
     }
@@ -286,6 +318,7 @@ private fun TrackMapCanvas(
     val transferColor = TransNoteTheme.colors.warning.toArgb()
     val highlightColor = TransNoteTheme.colors.danger.toArgb()
     val labelTextColor = MaterialTheme.colorScheme.onSurface.toArgb()
+    val labelSubTextColor = TransNoteTheme.colors.hintText.toArgb()
     val labelBgColor = MaterialTheme.colorScheme.surface.toArgb()
 
     val mapView = rememberLifecycleMapView {
@@ -317,6 +350,7 @@ private fun TrackMapCanvas(
                 transferColor = transferColor,
                 highlightColor = highlightColor,
                 labelTextColor = labelTextColor,
+                labelSubTextColor = labelSubTextColor,
                 labelBgColor = labelBgColor,
                 drawTrack = drawTrack,
                 onTapStation = onTapStation
@@ -534,7 +568,8 @@ private fun FullscreenTrackMapDialog(
                                                     latitude = item.latitude,
                                                     longitude = item.longitude,
                                                     title = item.name,
-                                                    key = FOCUS_KEY
+                                                    key = FOCUS_KEY,
+                                                    markers = item.markers
                                                 )
                                                 keyword = ""
                                             }
@@ -548,6 +583,14 @@ private fun FullscreenTrackMapDialog(
                                                 color = TransNoteTheme.colors.hintText,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        if (item.markers.isNotEmpty()) {
+                                            Spacer(Modifier.height(4.dp))
+                                            MarkerTagRow(
+                                                names = item.markers,
+                                                accent = MaterialTheme.colorScheme.primary,
+                                                max = 4
                                             )
                                         }
                                     }

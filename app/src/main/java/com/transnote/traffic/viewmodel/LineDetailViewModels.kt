@@ -27,7 +27,11 @@ data class LineMapContext(
     val searchStations: List<CityStation> = emptyList(),
     val metroStationLabels: Map<Long, String> = emptyMap(),
     val markers: List<StationMarkerEntity> = emptyList()
-)
+) {
+    /** 解析站点标记名称（按标记列表顺序去重） */
+    fun markerNames(markerIds: List<Long>): List<String> =
+        markers.filter { it.id in markerIds }.map { it.name }.distinct()
+}
 
 data class BusLineDetailUiState(
     val line: BusLineEntity? = null,

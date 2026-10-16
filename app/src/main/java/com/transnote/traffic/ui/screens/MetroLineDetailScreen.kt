@@ -205,7 +205,8 @@ fun MetroLineDetailScreen(
                                 title = s.name,
                                 isTransfer = wrapper.entrances.isNotEmpty(),
                                 key = s.id,
-                                colorHex = s.colorHex
+                                colorHex = s.colorHex,
+                                markers = state.mapContext.markerNames(s.markerIds)
                             )
                         } else null
                     },
@@ -214,7 +215,7 @@ fun MetroLineDetailScreen(
                     onSelectKey = { selectedKey = it },
                     defaultCenter = state.mapContext.cityCenter,
                     searchItems = state.mapContext.searchStations.map {
-                        MapSearchItem(it.name, it.latitude, it.longitude, it.subtitle)
+                        MapSearchItem(it.name, it.latitude, it.longitude, it.subtitle, it.markers)
                     },
                     emptyHint = "为地铁站点设置地图坐标后将在此绘制轨迹",
                     lineColor = lineColor

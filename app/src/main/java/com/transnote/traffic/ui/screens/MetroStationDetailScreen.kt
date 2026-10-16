@@ -231,7 +231,8 @@ fun MetroStationDetailScreen(
                                     longitude = editor.longitude!!,
                                     title = editor.name,
                                     colorHex = editor.colorHex,
-                                    key = editor.id
+                                    key = editor.id,
+                                    markers = markers.filter { it.id in editor.markerIds }.map { it.name }
                                 )
                             )
                         } else {
@@ -239,6 +240,7 @@ fun MetroStationDetailScreen(
                         },
                         modifier = Modifier.fillMaxWidth().height(180.dp),
                         drawTrack = false,
+                        selectedKey = editor.id,
                         allowFullscreen = false,
                         defaultCenter = editor.cityCenter,
                         emptyHint = "尚未设置点位，默认显示城市中心",

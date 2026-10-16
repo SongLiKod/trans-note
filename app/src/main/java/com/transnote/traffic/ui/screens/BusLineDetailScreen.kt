@@ -288,7 +288,8 @@ fun BusLineDetailScreen(
                                 title = s.name,
                                 isTransfer = s.isMetroTransfer,
                                 key = s.id,
-                                colorHex = s.colorHex
+                                colorHex = s.colorHex,
+                                markers = state.mapContext.markerNames(s.markerIds)
                             )
                         } else null
                     },
@@ -297,7 +298,7 @@ fun BusLineDetailScreen(
                     onSelectKey = { selectedKey = it },
                     defaultCenter = state.mapContext.cityCenter,
                     searchItems = state.mapContext.searchStations.map {
-                        MapSearchItem(it.name, it.latitude, it.longitude, it.subtitle)
+                        MapSearchItem(it.name, it.latitude, it.longitude, it.subtitle, it.markers)
                     },
                     lineColor = lineColor
                 )

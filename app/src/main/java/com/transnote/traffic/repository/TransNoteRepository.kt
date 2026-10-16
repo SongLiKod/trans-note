@@ -31,7 +31,9 @@ data class CityStation(
     val latitude: Double,
     val longitude: Double,
     val subtitle: String,
-    val isMetro: Boolean
+    val isMetro: Boolean,
+    /** 站点标记名称（多选），用于地图气泡与搜索列表展示 */
+    val markers: List<String> = emptyList()
 )
 
 /**
@@ -123,6 +125,7 @@ class TransNoteRepository(
 
     /** 当前城市全部有坐标的站点（地图内搜索用），默认限定城市范围 */
     suspend fun getCityStations(cityId: Long): List<CityStation> {
+        val allMarkers = db.stationMarkerDao().getAllOnce()
         val busLineNames = db.busLineDao().getAllOnce()
             .filter { it.cityId == cityId }
             .associate { it.id to it.lineName }
@@ -140,7 +143,8 @@ class TransNoteRepository(
                         latitude = it.latitude!!,
                         longitude = it.longitude!!,
                         subtitle = "公交 · ${busLineNames[it.lineId].orEmpty()}",
-                        isMetro = false
+                        isMetro = false,
+                        markers = markerNamesOf(it.markerIds, allMarkers)
                     )
                 )
             }
@@ -153,7 +157,8 @@ class TransNoteRepository(
                         latitude = it.latitude!!,
                         longitude = it.longitude!!,
                         subtitle = "地铁 · ${metroLineNames[it.lineId].orEmpty()}",
-                        isMetro = true
+                        isMetro = true,
+                        markers = markerNamesOf(it.markerIds, allMarkers)
                     )
                 )
             }
