@@ -52,6 +52,16 @@ data class AmapMetroExit(
     val longitude: Double? = null
 )
 
+/** 高德周边公交 / 地铁站点（在线检索用）：坐标为 WGS-84 */
+data class AmapNearbyStop(
+    val name: String,
+    val isMetro: Boolean,
+    val address: String = "",
+    val distanceMeters: Double = 0.0,
+    val latitude: Double? = null,
+    val longitude: Double? = null
+)
+
 /** 站点周边可换乘的交通设施类型（对应默认站点标记名称） */
 enum class AmapTransitKind(val markerName: String) {
     METRO("地铁"),
@@ -80,6 +90,7 @@ object AmapApi {
     private const val TYPES_TRAIN = "150200"
     private const val TYPES_METRO = "150500"
     private const val TYPE_METRO_EXIT = "150501"
+    private const val TYPE_BUS_STOP = "150700"
 
     /** 从出入口 POI 名称中提取「A口 / 2号口 / C出入口」等 */
     private val EXIT_REGEX = Regex("[A-Za-z0-9]{1,3}\\s*号?\\s*(出入口|出口|口)")
@@ -132,6 +143,83 @@ object AmapApi {
             }
             parseTransit(httpGet(url))
         }.getOrDefault(emptySet())
+    }
+
+    /**
+     * 在线检索：先按关键词定位地点，再查询该地点周边的公交站 / 地铁站。
+     * 返回按距离升序的结果（坐标为 WGS-84），任一环节失败返回空列表。
+     */
+    suspend fun searchNearbyTransit(
+        key: String,
+        keyword: String,
+        city: String = "",
+        radiusMeters: Int = 2000
+    ): List<AmapNearbyStop> = withContext(Dispatchers.IO) {
+        if (key.isBlank() || keyword.isBlank()) return@withContext emptyList()
+        runCatching {
+            val center = geocodeFirst(key, keyword, city) ?: return@runCatching emptyList()
+            val (gLat, gLng) = center
+            val location = String.format(java.util.Locale.US, "%.6f,%.6f", gLng, gLat)
+            val types = "$TYPE_BUS_STOP|$TYPES_METRO"
+            val url = buildString {
+                append(PLACE_AROUND_URL)
+                append("?key=").append(enc(key))
+                append("&location=").append(enc(location))
+                append("&types=").append(enc(types))
+                append("&radius=").append(radiusMeters)
+                append("&offset=25&page=1&extensions=base&output=JSON")
+            }
+            parseNearbyStops(httpGet(url))
+        }.getOrDefault(emptyList())
+    }
+
+    /** 关键字定位：取首个 POI 的 GCJ-02 坐标用于周边检索 */
+    private fun geocodeFirst(key: String, keyword: String, city: String): Pair<Double, Double>? {
+        val url = buildString {
+            append(PLACE_TEXT_URL)
+            append("?key=").append(enc(key))
+            append("&keywords=").append(enc(keyword))
+            if (city.isNotBlank()) append("&city=").append(enc(city))
+            append("&offset=1&page=1&extensions=base&output=JSON")
+        }
+        val root = runCatching { JSONObject(httpGet(url)) }.getOrNull() ?: return null
+        if (root.optString("status") != "1") return null
+        val poi = root.optJSONArray("pois")?.optJSONObject(0) ?: return null
+        val parts = poi.optString("location").split(",")
+        if (parts.size != 2) return null
+        val lng = parts[0].trim().toDoubleOrNull() ?: return null
+        val lat = parts[1].trim().toDoubleOrNull() ?: return null
+        return lat to lng
+    }
+
+    private fun parseNearbyStops(body: String): List<AmapNearbyStop> {
+        val root = JSONObject(body)
+        if (root.optString("status") != "1") return emptyList()
+        val pois = root.optJSONArray("pois") ?: return emptyList()
+        val list = ArrayList<AmapNearbyStop>(pois.length())
+        for (i in 0 until pois.length()) {
+            val poi = pois.optJSONObject(i) ?: continue
+            val name = poi.optString("name")
+            if (name.isBlank()) continue
+            val typecode = poi.optString("typecode").substringBefore("|").trim()
+            val isMetro = typecode.startsWith("1505")
+            val address = cleanField(poi.optString("address"))
+            val distance = poi.optString("distance").toDoubleOrNull() ?: 0.0
+            var lat: Double? = null
+            var lng: Double? = null
+            val parts = poi.optString("location").split(",")
+            if (parts.size == 2) {
+                val glng = parts[0].trim().toDoubleOrNull()
+                val glat = parts[1].trim().toDoubleOrNull()
+                if (glng != null && glat != null) {
+                    val (wl, wo) = CoordinateUtils.gcj02ToWgs84(glat, glng)
+                    lat = wl
+                    lng = wo
+                }
+            }
+            list.add(AmapNearbyStop(name, isMetro, address, distance, lat, lng))
+        }
+        return list.sortedBy { it.distanceMeters }
     }
 
     /**
