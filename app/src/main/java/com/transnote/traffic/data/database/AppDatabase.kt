@@ -20,9 +20,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MetroLineEntity::class,
         MetroStationEntity::class,
         MetroEntranceEntity::class,
-        BusStationEntranceCrossRef::class
+        BusStationEntranceCrossRef::class,
+        StationMarkerEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -34,12 +35,26 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun metroLineDao(): MetroLineDao
     abstract fun metroStationDao(): MetroStationDao
     abstract fun metroEntranceDao(): MetroEntranceDao
+    abstract fun stationMarkerDao(): StationMarkerDao
 
     companion object {
         const val DB_NAME = "transnote.db"
 
         @Volatile
         private var INSTANCE: AppDatabase? = null
+
+        /** 默认站点标记（PRD：默认有地铁、火车站、飞机） */
+        private val DEFAULT_MARKERS = listOf("地铁", "火车站", "飞机")
+
+        private fun seedDefaultMarkers(db: SupportSQLiteDatabase) {
+            val now = System.currentTimeMillis()
+            DEFAULT_MARKERS.forEachIndexed { index, name ->
+                db.execSQL(
+                    "INSERT INTO station_marker (name, sortOrder, createdAt) VALUES (?, ?, ?)",
+                    arrayOf(name, index, now)
+                )
+            }
+        }
 
         /** v1 → v2：为线路增加「开往方向 / 时刻表」字段（保留已有数据） */
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -50,6 +65,25 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE bus_line ADD COLUMN downTimetable TEXT NOT NULL DEFAULT ''")
                 db.execSQL("ALTER TABLE metro_line ADD COLUMN destination TEXT NOT NULL DEFAULT ''")
                 db.execSQL("ALTER TABLE metro_line ADD COLUMN timetable TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /** v2 → v3：站点/线路「颜色」+ 站点「标记」+ 标记列表（保留已有数据） */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE bus_line ADD COLUMN colorHex TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE bus_station ADD COLUMN colorHex TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE metro_station ADD COLUMN colorHex TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE bus_station ADD COLUMN markerIds TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE metro_station ADD COLUMN markerIds TEXT NOT NULL DEFAULT ''")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS station_marker (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "name TEXT NOT NULL, " +
+                        "sortOrder INTEGER NOT NULL, " +
+                        "createdAt INTEGER NOT NULL)"
+                )
+                seedDefaultMarkers(db)
             }
         }
 
@@ -67,9 +101,11 @@ abstract class AppDatabase : RoomDatabase() {
                         db.execSQL(
                             "INSERT INTO city (cityId, cityName) VALUES (1, '默认城市')"
                         )
+                        // 初始化默认站点标记
+                        seedDefaultMarkers(db)
                     }
                 })
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .fallbackToDestructiveMigration()
                 .build()
 

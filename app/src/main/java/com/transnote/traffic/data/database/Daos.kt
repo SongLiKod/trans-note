@@ -287,3 +287,27 @@ interface MetroEntranceDao {
     @Query("SELECT COUNT(*) FROM metro_entrance")
     suspend fun count(): Int
 }
+
+@Dao
+interface StationMarkerDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(marker: StationMarkerEntity): Long
+
+    @Update
+    suspend fun update(marker: StationMarkerEntity)
+
+    @Delete
+    suspend fun delete(marker: StationMarkerEntity)
+
+    @Query("SELECT * FROM station_marker ORDER BY sortOrder ASC, id ASC")
+    fun observeAll(): Flow<List<StationMarkerEntity>>
+
+    @Query("SELECT * FROM station_marker ORDER BY sortOrder ASC, id ASC")
+    suspend fun getAllOnce(): List<StationMarkerEntity>
+
+    @Query("SELECT COUNT(*) FROM station_marker")
+    suspend fun count(): Int
+
+    @Query("SELECT MAX(sortOrder) FROM station_marker")
+    suspend fun maxSortOrder(): Int?
+}

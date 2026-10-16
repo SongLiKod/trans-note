@@ -18,8 +18,8 @@ import kotlinx.coroutines.launch
 
 enum class LineType(val label: String) { BUS("公交线路"), METRO("地铁线路") }
 
-/** 编辑中的站点草稿（id=0 表示新增） */
-data class StationDraft(val id: Long = 0, val name: String = "")
+/** 编辑中的站点草稿（id=0 表示新增）@param colorHex 站点颜色（空=跟随线路） */
+data class StationDraft(val id: Long = 0, val name: String = "", val colorHex: String = "")
 
 data class LineEditUiState(
     val lineType: LineType = LineType.BUS,
@@ -92,9 +92,9 @@ class LineEditViewModel(
                 val line = repo.getBusLine(lineId)
                 if (line != null) {
                     val up = repo.getBusStations(lineId, BusStationEntity.DIRECTION_UP)
-                        .map { StationDraft(it.id, it.name) }
+                        .map { StationDraft(it.id, it.name, it.colorHex) }
                     val down = repo.getBusStations(lineId, BusStationEntity.DIRECTION_DOWN)
-                        .map { StationDraft(it.id, it.name) }
+                        .map { StationDraft(it.id, it.name, it.colorHex) }
                     _state.update {
                         it.copy(
                             lineName = line.lineName,
@@ -105,6 +105,7 @@ class LineEditViewModel(
                             downDestination = line.downDestination,
                             upTimetable = line.upTimetable,
                             downTimetable = line.downTimetable,
+                            colorHex = line.colorHex.ifBlank { "#2563EB" },
                             upStations = up,
                             downStations = down,
                             loading = false
@@ -117,7 +118,8 @@ class LineEditViewModel(
             LineType.METRO -> {
                 val line = repo.getMetroLine(lineId)
                 if (line != null) {
-                    val stations = repo.getMetroStations(lineId).map { StationDraft(it.id, it.name) }
+                    val stations = repo.getMetroStations(lineId)
+                        .map { StationDraft(it.id, it.name, it.colorHex) }
                     _state.update {
                         it.copy(
                             lineName = line.lineName,
@@ -126,7 +128,7 @@ class LineEditViewModel(
                             fare = line.fare,
                             destination = line.destination,
                             timetable = line.timetable,
-                            colorHex = line.colorHex,
+                            colorHex = line.colorHex.ifBlank { "#2563EB" },
                             metroStations = stations,
                             loading = false
                         )
@@ -191,6 +193,15 @@ class LineEditViewModel(
         }
     }
 
+    /** 设置某个站点的颜色（空串 = 跟随线路颜色） */
+    fun setStationColor(index: Int, hex: String) {
+        _state.update { s ->
+            val list = currentList(s).toMutableList()
+            if (index in list.indices) list[index] = list[index].copy(colorHex = hex)
+            updateList(s, list)
+        }
+    }
+
     fun removeStation(index: Int) {
         _state.update { s ->
             val list = currentList(s).toMutableList()
@@ -204,9 +215,11 @@ class LineEditViewModel(
         _state.update { s -> updateList(s, DragReorder.move(currentList(s), from, to)) }
     }
 
-    /** 一键把上行站点复制到下行 */
+    /** 一键把上行站点复制到下行（保留站点颜色） */
     fun copyUpToDown() {
-        _state.update { s -> s.copy(downStations = s.upStations.map { StationDraft(name = it.name) }) }
+        _state.update { s ->
+            s.copy(downStations = s.upStations.map { StationDraft(name = it.name, colorHex = it.colorHex) })
+        }
     }
 
     /** OCR 识别结果自动填充（PRD 3.1：自动填充线路、站点、运营时间，支持人工修改） */
@@ -253,7 +266,8 @@ class LineEditViewModel(
                             upDestination = s.upDestination.trim(),
                             downDestination = s.downDestination.trim(),
                             upTimetable = s.upTimetable.trim(),
-                            downTimetable = s.downTimetable.trim()
+                            downTimetable = s.downTimetable.trim(),
+                            colorHex = s.colorHex
                         )
                     )
                     reconcileBus(newId, BusStationEntity.DIRECTION_UP, s.upStations)
@@ -284,16 +298,21 @@ class LineEditViewModel(
 
     private suspend fun reconcileBus(lineId: Long, direction: Int, drafts: List<StationDraft>) {
         val existing = repo.getBusStations(lineId, direction)
+        val existingById = existing.associateBy { it.id }
         val kept = drafts.map { it.id }.filter { it > 0L }.toSet()
         existing.filter { it.id !in kept }.forEach { repo.deleteBusStationById(it.id) }
         drafts.forEachIndexed { index, draft ->
+            // 保留站点原有的备注 / 坐标 / 图片 / 标记等字段，避免线路编辑时被清空
+            val base = existingById[draft.id]
+                ?: BusStationEntity(lineId = lineId, direction = direction, name = draft.name)
             repo.saveBusStation(
-                BusStationEntity(
+                base.copy(
                     id = draft.id,
                     lineId = lineId,
                     direction = direction,
                     orderIndex = index,
-                    name = draft.name
+                    name = draft.name,
+                    colorHex = draft.colorHex
                 )
             )
         }
@@ -301,15 +320,19 @@ class LineEditViewModel(
 
     private suspend fun reconcileMetro(lineId: Long, drafts: List<StationDraft>) {
         val existing = repo.getMetroStations(lineId)
+        val existingById = existing.associateBy { it.id }
         val kept = drafts.map { it.id }.filter { it > 0L }.toSet()
         existing.filter { it.id !in kept }.forEach { repo.deleteMetroStationById(it.id) }
         drafts.forEachIndexed { index, draft ->
+            val base = existingById[draft.id]
+                ?: MetroStationEntity(lineId = lineId, name = draft.name)
             repo.saveMetroStation(
-                MetroStationEntity(
+                base.copy(
                     id = draft.id,
                     lineId = lineId,
                     orderIndex = index,
-                    name = draft.name
+                    name = draft.name,
+                    colorHex = draft.colorHex
                 )
             )
         }

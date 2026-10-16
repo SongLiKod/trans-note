@@ -12,6 +12,7 @@ import com.transnote.traffic.data.database.MetroEntranceEntity
 import com.transnote.traffic.data.database.MetroLineEntity
 import com.transnote.traffic.data.database.MetroStationEntity
 import com.transnote.traffic.data.database.MetroStationWithEntrances
+import com.transnote.traffic.data.database.StationMarkerEntity
 import com.transnote.traffic.data.file.BackupManager
 import com.transnote.traffic.data.file.BackupManager.BackupResult
 import com.transnote.traffic.data.file.ImageStorage
@@ -65,6 +66,47 @@ class TransNoteRepository(
     suspend fun ensureDefaultCity(): Long {
         val cities = db.cityDao().getAllOnce()
         return cities.firstOrNull()?.cityId ?: db.cityDao().insert(CityEntity(cityName = "默认城市"))
+    }
+
+    // ================= 站点标记（多选，列表可管理） =================
+
+    fun observeMarkers(): Flow<List<StationMarkerEntity>> = db.stationMarkerDao().observeAll()
+
+    suspend fun getMarkers(): List<StationMarkerEntity> = db.stationMarkerDao().getAllOnce()
+
+    /** 新增标记（返回 id） */
+    suspend fun addMarker(name: String): Long {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return 0L
+        val order = (db.stationMarkerDao().maxSortOrder() ?: -1) + 1
+        return db.stationMarkerDao().insert(
+            StationMarkerEntity(name = trimmed, sortOrder = order)
+        )
+    }
+
+    /** 重命名标记（站点上引用同一 id，改名后线路展示同步更新） */
+    suspend fun renameMarker(id: Long, name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        val marker = db.stationMarkerDao().getAllOnce().firstOrNull { it.id == id } ?: return
+        db.stationMarkerDao().update(marker.copy(name = trimmed))
+    }
+
+    /** 删除标记（同时从所有站点上移除该标记 id） */
+    suspend fun deleteMarker(id: Long) {
+        db.busStationDao().getAllOnce().forEach { station ->
+            if (id in station.markerIds) {
+                db.busStationDao().update(station.copy(markerIds = station.markerIds - id))
+            }
+        }
+        db.metroStationDao().getAllOnce().forEach { station ->
+            if (id in station.markerIds) {
+                db.metroStationDao().update(station.copy(markerIds = station.markerIds - id))
+            }
+        }
+        db.stationMarkerDao().getAllOnce().firstOrNull { it.id == id }?.let {
+            db.stationMarkerDao().delete(it)
+        }
     }
 
     /** 当前城市全部有坐标的站点（地图内搜索用），默认限定城市范围 */

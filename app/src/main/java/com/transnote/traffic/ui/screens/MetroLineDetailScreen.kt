@@ -38,17 +38,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.transnote.traffic.AppContainer
 import com.transnote.traffic.data.database.MetroStationWithEntrances
+import com.transnote.traffic.data.database.StationMarkerEntity
 import com.transnote.traffic.ui.components.ConfirmDialog
 import com.transnote.traffic.ui.components.DragReorderColumn
 import com.transnote.traffic.ui.components.LabeledTextField
 import com.transnote.traffic.ui.components.MapPoint
 import com.transnote.traffic.ui.components.MapSearchItem
+import com.transnote.traffic.ui.components.MarkerTag
 import com.transnote.traffic.ui.components.SectionTitle
 import com.transnote.traffic.ui.components.StationTimelineRow
 import com.transnote.traffic.ui.components.StationTrackMap
@@ -56,6 +59,7 @@ import com.transnote.traffic.ui.components.Tag
 import com.transnote.traffic.ui.components.TimetableContent
 import com.transnote.traffic.ui.components.TransNoteCard
 import com.transnote.traffic.ui.components.TransNoteTopBar
+import com.transnote.traffic.ui.theme.LineColors
 import com.transnote.traffic.ui.theme.TransNoteTheme
 import com.transnote.traffic.utils.CoordinateUtils
 import com.transnote.traffic.utils.StationNameParser
@@ -78,6 +82,7 @@ fun MetroLineDetailScreen(
         factory = containerViewModelFactory { MetroLineDetailViewModel(it.repository, lineId) }
     )
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val lineColor = LineColors.line(state.line?.colorHex, MaterialTheme.colorScheme.primary)
     var editMode by remember { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
     var newStationName by remember { mutableStateOf("") }
@@ -152,17 +157,23 @@ fun MetroLineDetailScreen(
             item {
                 TransNoteCard {
                     Column {
-                        Text(
-                            state.line?.let { line ->
-                                val fare = if (line.fare.isNotBlank()) " · 票价 ${line.fare}" else ""
-                                "首末班 ${line.firstBus.ifBlank { "--" }}~" +
-                                    "${line.lastBus.ifBlank { "--" }}$fare"
-                            } ?: "—",
-                            style = MaterialTheme.typography.bodyLarge
-                        )
+                        val info = state.line?.let { line ->
+                            buildList {
+                                if (line.firstBus.isNotBlank() || line.lastBus.isNotBlank()) {
+                                    add("首末班 ${line.firstBus.ifBlank { "--" }}~${line.lastBus.ifBlank { "--" }}")
+                                }
+                                if (line.fare.isNotBlank()) add("票价 ${line.fare}")
+                            }.joinToString(" · ")
+                        }.orEmpty()
+                        if (info.isNotBlank()) {
+                            Text(
+                                info,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
                         val destination = state.line?.destination.orEmpty()
                         if (destination.isNotBlank()) {
-                            Spacer(Modifier.height(8.dp))
+                            if (info.isNotBlank()) Spacer(Modifier.height(8.dp))
                             Text(
                                 "开往 $destination",
                                 style = MaterialTheme.typography.bodyLarge,
@@ -175,17 +186,10 @@ fun MetroLineDetailScreen(
 
             item {
                 val timetable = state.line?.timetable.orEmpty()
-                SectionTitle("时刻表")
-                TransNoteCard {
-                    if (timetable.isBlank()) {
-                        Text(
-                            "未填写时刻表，点右上角「⋮ → 编辑线路信息」补充",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TransNoteTheme.colors.hintText
-                        )
-                    } else {
-                        TimetableContent(timetable)
-                    }
+                // 未配置时刻表时不显示该板块
+                if (timetable.isNotBlank()) {
+                    SectionTitle("时刻表")
+                    TransNoteCard { TimetableContent(timetable) }
                 }
             }
 
@@ -200,7 +204,8 @@ fun MetroLineDetailScreen(
                                 longitude = s.longitude!!,
                                 title = s.name,
                                 isTransfer = wrapper.entrances.isNotEmpty(),
-                                key = s.id
+                                key = s.id,
+                                colorHex = s.colorHex
                             )
                         } else null
                     },
@@ -211,7 +216,8 @@ fun MetroLineDetailScreen(
                     searchItems = state.mapContext.searchStations.map {
                         MapSearchItem(it.name, it.latitude, it.longitude, it.subtitle)
                     },
-                    emptyHint = "为地铁站点设置地图坐标后将在此绘制轨迹"
+                    emptyHint = "为地铁站点设置地图坐标后将在此绘制轨迹",
+                    lineColor = lineColor
                 )
             }
 
@@ -271,6 +277,9 @@ fun MetroLineDetailScreen(
                             editMode = true,
                             isDragging = isDragging,
                             isSelected = false,
+                            lineColor = lineColor,
+                            lineColorHex = state.line?.colorHex.orEmpty(),
+                            markers = state.mapContext.markers,
                             onClick = { onOpenStation(wrapper.station.id) },
                             onSelect = {},
                             onDelete = { pendingDeleteStation = wrapper.station.id to wrapper.station.name }
@@ -286,6 +295,9 @@ fun MetroLineDetailScreen(
                                 editMode = false,
                                 isDragging = false,
                                 isSelected = selectedKey == wrapper.station.id,
+                                lineColor = lineColor,
+                                lineColorHex = state.line?.colorHex.orEmpty(),
+                                markers = state.mapContext.markers,
                                 onClick = { onOpenStation(wrapper.station.id) },
                                 onSelect = { selectedKey = wrapper.station.id },
                                 onDelete = {}
@@ -369,17 +381,23 @@ private fun MetroStationTimelineItem(
     editMode: Boolean,
     isDragging: Boolean,
     isSelected: Boolean,
+    lineColor: Color,
+    lineColorHex: String,
+    markers: List<StationMarkerEntity>,
     onClick: () -> Unit,
     onSelect: () -> Unit,
     onDelete: () -> Unit
 ) {
     val station = wrapper.station
+    val markerNames = markers.filter { it.id in station.markerIds }.map { it.name }
     StationTimelineRow(
         index = index,
         total = total,
         isTransfer = wrapper.entrances.isNotEmpty(),
         isDragging = isDragging,
         isSelected = isSelected,
+        lineColor = lineColor,
+        pointColor = LineColors.station(station.colorHex, lineColorHex, lineColor),
         onClick = if (editMode) onClick else onSelect,
         trailing = {
             if (editMode) {
@@ -415,6 +433,15 @@ private fun MetroStationTimelineItem(
                     MaterialTheme.colorScheme.primary,
                     icon = Icons.Filled.Login
                 )
+            }
+        }
+        // 站点标记（多选），显示在线路上
+        if (markerNames.isNotEmpty()) {
+            Spacer(Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                markerNames.forEach { name ->
+                    MarkerTag(name = name, accent = lineColor)
+                }
             }
         }
         Text(

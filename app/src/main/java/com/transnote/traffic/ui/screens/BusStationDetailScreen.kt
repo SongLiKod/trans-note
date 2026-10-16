@@ -56,15 +56,21 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.transnote.traffic.AppContainer
 import com.transnote.traffic.data.database.MetroEntranceEntity
+import com.transnote.traffic.ui.components.ColorPickerRow
 import com.transnote.traffic.ui.components.ConfirmDialog
 import com.transnote.traffic.ui.components.ImageGrid
 import com.transnote.traffic.ui.components.LabeledTextField
 import com.transnote.traffic.ui.components.MapPickerDialog
+import com.transnote.traffic.ui.components.MapPoint
+import com.transnote.traffic.ui.components.MarkerManagerDialog
+import com.transnote.traffic.ui.components.MarkerSelector
 import com.transnote.traffic.ui.components.SectionTitle
+import com.transnote.traffic.ui.components.StationTrackMap
 import com.transnote.traffic.ui.components.Tag
 import com.transnote.traffic.ui.components.TransNoteCard
 import com.transnote.traffic.ui.components.TransNoteTopBar
 import com.transnote.traffic.ui.components.rememberImagePicker
+import com.transnote.traffic.ui.theme.LineColors
 import com.transnote.traffic.ui.theme.TransNoteTheme
 import com.transnote.traffic.utils.CoordinateUtils
 import com.transnote.traffic.viewmodel.BusStationViewModel
@@ -88,10 +94,17 @@ fun BusStationDetailScreen(
     )
     val editor by viewModel.editor.collectAsStateWithLifecycle()
     val transfers by viewModel.transfers.collectAsStateWithLifecycle()
+    val markers by viewModel.markers.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val stationColor = LineColors.station(
+        editor.colorHex,
+        editor.lineColorHex,
+        LineColors.line(editor.lineColorHex, MaterialTheme.colorScheme.primary)
+    )
 
     var showMapPicker by remember { mutableStateOf(false) }
     var showTransferPicker by remember { mutableStateOf(false) }
+    var showMarkerManager by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
 
     val imagePicker = rememberImagePicker { uri -> viewModel.addImage(uri) }
@@ -195,6 +208,26 @@ fun BusStationDetailScreen(
             )
 
             Spacer(Modifier.height(20.dp))
+            SectionTitle("站点颜色")
+            TransNoteCard {
+                ColorPickerRow(
+                    label = "站点圆点颜色（默认跟随线路颜色）",
+                    selectedHex = editor.colorHex,
+                    onSelect = viewModel::setColor,
+                    inheritLabel = "跟随线路",
+                    onInherit = { viewModel.setColor("") }
+                )
+            }
+
+            Spacer(Modifier.height(20.dp))
+            MarkerSelector(
+                markers = markers,
+                selectedIds = editor.markerIds,
+                onToggle = viewModel::toggleMarker,
+                onManage = { showMarkerManager = true }
+            )
+
+            Spacer(Modifier.height(20.dp))
             SectionTitle("实景图片")
             ImageGrid(
                 paths = editor.imagePaths,
@@ -217,6 +250,28 @@ fun BusStationDetailScreen(
             SectionTitle("地图点位")
             TransNoteCard {
                 Column {
+                    StationTrackMap(
+                        points = if (CoordinateUtils.isValid(editor.latitude, editor.longitude)) {
+                            listOf(
+                                MapPoint(
+                                    latitude = editor.latitude!!,
+                                    longitude = editor.longitude!!,
+                                    title = editor.name,
+                                    colorHex = editor.colorHex,
+                                    key = editor.id
+                                )
+                            )
+                        } else {
+                            emptyList()
+                        },
+                        modifier = Modifier.fillMaxWidth().height(180.dp),
+                        drawTrack = false,
+                        allowFullscreen = false,
+                        defaultCenter = editor.cityCenter,
+                        emptyHint = "尚未设置点位，默认显示城市中心",
+                        lineColor = stationColor
+                    )
+                    Spacer(Modifier.height(8.dp))
                     Text(
                         CoordinateUtils.format(editor.latitude, editor.longitude),
                         style = MaterialTheme.typography.bodyLarge
@@ -353,6 +408,13 @@ fun BusStationDetailScreen(
         TransferPickerDialog(
             viewModel = viewModel,
             onDismiss = { showTransferPicker = false }
+        )
+    }
+
+    if (showMarkerManager) {
+        MarkerManagerDialog(
+            repository = container.repository,
+            onDismiss = { showMarkerManager = false }
         )
     }
 

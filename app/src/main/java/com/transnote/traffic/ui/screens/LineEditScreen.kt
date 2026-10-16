@@ -54,13 +54,16 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.transnote.traffic.AppContainer
 import com.transnote.traffic.data.database.BusStationEntity
 import com.transnote.traffic.data.database.CityEntity
+import com.transnote.traffic.ui.components.ColorPickerRow
 import com.transnote.traffic.ui.components.DragReorderColumn
 import com.transnote.traffic.ui.components.LabeledTextField
 import com.transnote.traffic.ui.components.SectionTitle
+import com.transnote.traffic.ui.components.StationColorDot
 import com.transnote.traffic.ui.components.StationTimelineRow
 import com.transnote.traffic.ui.components.ThemedDivider
 import com.transnote.traffic.ui.components.TransNoteCard
 import com.transnote.traffic.ui.components.TransNoteTopBar
+import com.transnote.traffic.ui.theme.LineColors
 import com.transnote.traffic.ui.theme.TransNoteTheme
 import com.transnote.traffic.utils.StationNameParser
 import com.transnote.traffic.viewmodel.LineEditViewModel
@@ -91,6 +94,7 @@ fun LineEditScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var renameIndex by remember { mutableStateOf<Int?>(null) }
+    var colorIndex by remember { mutableStateOf<Int?>(null) }
     var newStationName by remember { mutableStateOf("") }
     var showBatchAdd by remember { mutableStateOf(false) }
 
@@ -118,6 +122,7 @@ fun LineEditScreen(
         else state.downStations
         LineType.METRO -> state.metroStations
     }
+    val lineColor = LineColors.line(state.colorHex, MaterialTheme.colorScheme.primary)
 
     Scaffold(
         topBar = {
@@ -192,6 +197,12 @@ fun LineEditScreen(
                         onValueChange = viewModel::setFare,
                         placeholder = "2元",
                         keyboardType = KeyboardType.Text
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    ColorPickerRow(
+                        label = "线路颜色",
+                        selectedHex = state.colorHex,
+                        onSelect = viewModel::setColorHex
                     )
                     Spacer(Modifier.height(12.dp))
                     OutlinedButton(
@@ -329,8 +340,14 @@ fun LineEditScreen(
                         total = stations.size,
                         isTransfer = false,
                         isDragging = isDragging,
+                        lineColor = lineColor,
+                        pointColor = LineColors.station(item.colorHex, state.colorHex, lineColor),
                         onClick = { renameIndex = index },
                         trailing = {
+                            StationColorDot(
+                                color = LineColors.station(item.colorHex, state.colorHex, lineColor),
+                                onClick = { colorIndex = index }
+                            )
                             Icon(
                                 Icons.Filled.DragHandle,
                                 contentDescription = "拖拽排序",
@@ -432,6 +449,29 @@ fun LineEditScreen(
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = { renameIndex = null }) {
                     Text("取消", color = TransNoteTheme.colors.hintText)
+                }
+            }
+        )
+    }
+
+    colorIndex?.let { index ->
+        val current = stations.getOrNull(index)?.colorHex.orEmpty()
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { colorIndex = null },
+            shape = MaterialTheme.shapes.large,
+            title = { Text("站点颜色") },
+            text = {
+                ColorPickerRow(
+                    label = "选择该站点圆点颜色（可单独设置，默认跟随线路）",
+                    selectedHex = current,
+                    onSelect = { viewModel.setStationColor(index, it) },
+                    inheritLabel = "跟随线路",
+                    onInherit = { viewModel.setStationColor(index, "") }
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { colorIndex = null }) {
+                    Text("完成")
                 }
             }
         )

@@ -7,6 +7,7 @@ import com.transnote.traffic.data.database.BusStationEntity
 import com.transnote.traffic.data.database.BusStationWithTransfers
 import com.transnote.traffic.data.database.MetroLineEntity
 import com.transnote.traffic.data.database.MetroStationWithEntrances
+import com.transnote.traffic.data.database.StationMarkerEntity
 import com.transnote.traffic.repository.CityStation
 import com.transnote.traffic.repository.TransNoteRepository
 import com.transnote.traffic.utils.DragReorder
@@ -20,11 +21,12 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-/** 线路地图上下文：默认城市中心 + 城市内站点（地图搜索）*/
+/** 线路地图上下文：默认城市中心 + 城市内站点（地图搜索）+ 站点标记 */
 data class LineMapContext(
     val cityCenter: Pair<Double, Double>? = null,
     val searchStations: List<CityStation> = emptyList(),
-    val metroStationLabels: Map<Long, String> = emptyMap()
+    val metroStationLabels: Map<Long, String> = emptyMap(),
+    val markers: List<StationMarkerEntity> = emptyList()
 )
 
 data class BusLineDetailUiState(
@@ -56,11 +58,18 @@ class BusLineDetailViewModel(
     private val mapContext = MutableStateFlow(LineMapContext())
 
     val uiState: StateFlow<BusLineDetailUiState> = combine(
-        lineFlow, direction, mapContext
-    ) { line, dir, ctx -> Triple(line, dir, ctx) }
-        .flatMapLatest { (line, dir, ctx) ->
-            repo.observeBusStationsWithTransfers(lineId, dir).map { list ->
-                BusLineDetailUiState(line = line, direction = dir, stations = list, mapContext = ctx)
+        lineFlow, direction, mapContext, repo.observeMarkers()
+    ) { line, dir, ctx, markers ->
+        BusLineDetailUiState(
+            line = line,
+            direction = dir,
+            stations = emptyList(),
+            mapContext = ctx.copy(markers = markers)
+        )
+    }
+        .flatMapLatest { base ->
+            repo.observeBusStationsWithTransfers(lineId, base.direction).map { list ->
+                base.copy(stations = list)
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BusLineDetailUiState())
@@ -136,11 +145,19 @@ class MetroLineDetailViewModel(
 
     val uiState: StateFlow<MetroLineDetailUiState> = combine(
         repo.observeMetroLine(lineId),
-        repo.observeMetroStationsWithEntrances(lineId),
-        mapContext
-    ) { line, stations, ctx ->
-        MetroLineDetailUiState(line = line, stations = stations, mapContext = ctx)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MetroLineDetailUiState())
+        mapContext,
+        repo.observeMarkers()
+    ) { line, ctx, markers ->
+        MetroLineDetailUiState(
+            line = line,
+            stations = emptyList(),
+            mapContext = ctx.copy(markers = markers)
+        )
+    }
+        .flatMapLatest { base ->
+            repo.observeMetroStationsWithEntrances(lineId).map { base.copy(stations = it) }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MetroLineDetailUiState())
 
     init {
         viewModelScope.launch {

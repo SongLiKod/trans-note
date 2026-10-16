@@ -7,6 +7,7 @@ import com.transnote.traffic.data.database.BusStationEntity
 import com.transnote.traffic.data.database.MetroEntranceEntity
 import com.transnote.traffic.data.database.MetroLineEntity
 import com.transnote.traffic.data.database.MetroStationEntity
+import com.transnote.traffic.data.database.StationMarkerEntity
 import com.transnote.traffic.repository.TransNoteRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -25,9 +26,15 @@ data class StationEditorState(
     val longitude: Double? = null,
     val imagePaths: List<String> = emptyList(),
     val isMetroTransfer: Boolean = false,
+    /** 站点圆点颜色（HEX；空=跟随线路颜色） */
+    val colorHex: String = "",
+    /** 站点标记（多选），关联 station_marker.id */
+    val markerIds: List<Long> = emptyList(),
     /** 所属线路（用于从站点跳转到对应线路查看） */
     val lineId: Long = 0,
     val lineName: String = "",
+    /** 所属线路颜色（HEX），用于站点颜色默认值与地图预览 */
+    val lineColorHex: String = "",
     /** 所属城市中心（WGS-84），用于地图选点默认定位到当前城市 */
     val cityCenter: Pair<Double, Double>? = null,
     val loading: Boolean = true,
@@ -66,6 +73,11 @@ class BusStationViewModel(
     private val _editor = MutableStateFlow(StationEditorState())
     val editor: StateFlow<StationEditorState> = _editor.asStateFlow()
 
+    /** 可用的站点标记列表（用户可管理） */
+    val markers: StateFlow<List<StationMarkerEntity>> =
+        repo.observeMarkers()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     /** 当前站点已绑定的地铁出入口（换乘标签数据） */
     val transfers: StateFlow<List<MetroEntranceEntity>> =
         repo.observeTransferEntrances(stationId)
@@ -103,8 +115,11 @@ class BusStationViewModel(
             longitude = station.longitude,
             imagePaths = station.imagePaths,
             isMetroTransfer = station.isMetroTransfer,
+            colorHex = station.colorHex,
+            markerIds = station.markerIds,
             lineId = station.lineId,
             lineName = line?.lineName ?: "",
+            lineColorHex = line?.colorHex.orEmpty(),
             cityCenter = line?.let { repo.getCityCenter(it.cityId) },
             loading = false
         )
@@ -115,6 +130,10 @@ class BusStationViewModel(
     fun setNote(value: String) = _editor.update { it.copy(note = value) }
     fun setCoordinate(lat: Double, lng: Double) = _editor.update { it.copy(latitude = lat, longitude = lng) }
     fun clearCoordinate() = _editor.update { it.copy(latitude = null, longitude = null) }
+    fun setColor(hex: String) = _editor.update { it.copy(colorHex = hex) }
+    fun toggleMarker(id: Long) = _editor.update {
+        it.copy(markerIds = if (id in it.markerIds) it.markerIds - id else it.markerIds + id)
+    }
     fun consumeMessage() = _editor.update { it.copy(message = null) }
 
     /** 上传实景图片（拍照/相册），保存到 APP 私有目录并写库 */
@@ -150,7 +169,9 @@ class BusStationViewModel(
             note = note,
             latitude = latitude,
             longitude = longitude,
-            imagePaths = imagePaths
+            imagePaths = imagePaths,
+            colorHex = _editor.value.colorHex,
+            markerIds = _editor.value.markerIds
         )
         repo.saveBusStation(updated)
         _editor.update {
@@ -236,6 +257,11 @@ class MetroStationViewModel(
     private val _editor = MutableStateFlow(StationEditorState())
     val editor: StateFlow<StationEditorState> = _editor.asStateFlow()
 
+    /** 可用的站点标记列表（用户可管理） */
+    val markers: StateFlow<List<StationMarkerEntity>> =
+        repo.observeMarkers()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     val entrances: StateFlow<List<MetroEntranceEntity>> =
         repo.observeEntrances(stationId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -258,8 +284,11 @@ class MetroStationViewModel(
             latitude = station.latitude,
             longitude = station.longitude,
             imagePaths = station.imagePaths,
+            colorHex = station.colorHex,
+            markerIds = station.markerIds,
             lineId = station.lineId,
             lineName = line?.lineName ?: "",
+            lineColorHex = line?.colorHex.orEmpty(),
             cityCenter = line?.let { repo.getCityCenter(it.cityId) },
             loading = false
         )
@@ -268,6 +297,10 @@ class MetroStationViewModel(
     fun setName(value: String) = _editor.update { it.copy(name = value) }
     fun setNote(value: String) = _editor.update { it.copy(note = value) }
     fun setCoordinate(lat: Double, lng: Double) = _editor.update { it.copy(latitude = lat, longitude = lng) }
+    fun setColor(hex: String) = _editor.update { it.copy(colorHex = hex) }
+    fun toggleMarker(id: Long) = _editor.update {
+        it.copy(markerIds = if (id in it.markerIds) it.markerIds - id else it.markerIds + id)
+    }
     fun consumeMessage() = _editor.update { it.copy(message = null) }
 
     fun addImage(uri: Uri) {
@@ -294,7 +327,9 @@ class MetroStationViewModel(
             note = _editor.value.note,
             latitude = _editor.value.latitude,
             longitude = _editor.value.longitude,
-            imagePaths = imagePaths
+            imagePaths = imagePaths,
+            colorHex = _editor.value.colorHex,
+            markerIds = _editor.value.markerIds
         )
         repo.saveMetroStation(updated)
         _editor.update {

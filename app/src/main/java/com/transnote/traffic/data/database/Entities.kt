@@ -42,6 +42,8 @@ data class BusLineEntity(
     @ColumnInfo(defaultValue = "") val downDestination: String = "",
     @ColumnInfo(defaultValue = "") val upTimetable: String = "",
     @ColumnInfo(defaultValue = "") val downTimetable: String = "",
+    /** 线路颜色（HEX，如 #2563EB；空表示使用默认色） */
+    @ColumnInfo(defaultValue = "") val colorHex: String = "",
     // 三期：收藏 / 置顶 / 分组
     val isFavorite: Boolean = false,
     val isPinned: Boolean = false,
@@ -74,6 +76,10 @@ data class BusStationEntity(
     val note: String = "",
     val imagePaths: List<String> = emptyList(),
     val isMetroTransfer: Boolean = false,
+    /** 站点圆点颜色（HEX；空表示跟随线路颜色） */
+    @ColumnInfo(defaultValue = "") val colorHex: String = "",
+    /** 站点标记（多选），关联 station_marker.id */
+    @ColumnInfo(defaultValue = "") val markerIds: List<Long> = emptyList(),
     val createdAt: Long = System.currentTimeMillis()
 ) {
     companion object {
@@ -134,6 +140,19 @@ data class MetroStationEntity(
     val longitude: Double? = null,
     val note: String = "",
     val imagePaths: List<String> = emptyList(),
+    /** 站点圆点颜色（HEX；空表示跟随线路颜色） */
+    @ColumnInfo(defaultValue = "") val colorHex: String = "",
+    /** 站点标记（多选），关联 station_marker.id */
+    @ColumnInfo(defaultValue = "") val markerIds: List<Long> = emptyList(),
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+/** 站点标记（如：地铁 / 火车站 / 飞机）。列表由用户管理，站点可多选标记 */
+@Entity(tableName = "station_marker")
+data class StationMarkerEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val sortOrder: Int = 0,
     val createdAt: Long = System.currentTimeMillis()
 )
 

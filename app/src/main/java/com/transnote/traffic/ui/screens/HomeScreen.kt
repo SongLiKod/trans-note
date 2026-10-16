@@ -38,6 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -61,6 +62,7 @@ import com.transnote.traffic.ui.components.EmptyState
 import com.transnote.traffic.ui.components.Tag
 import com.transnote.traffic.ui.components.TransNoteCard
 import com.transnote.traffic.ui.components.TransNoteTopBar
+import com.transnote.traffic.ui.theme.LineColors
 import com.transnote.traffic.ui.theme.TransNoteTheme
 import com.transnote.traffic.viewmodel.HomeTab
 import com.transnote.traffic.viewmodel.HomeViewModel
@@ -493,6 +495,7 @@ private fun BusLineList(
                         }
                         if (isEmpty()) append("公交线路")
                     },
+                    colorHex = line.colorHex,
                     isFavorite = line.isFavorite,
                     isPinned = line.isPinned,
                     group = line.groupName,
@@ -550,6 +553,7 @@ private fun MetroLineList(
                         }
                         if (isEmpty()) append("地铁线路")
                     },
+                    colorHex = line.colorHex,
                     isFavorite = line.isFavorite,
                     isPinned = line.isPinned,
                     group = line.groupName,
@@ -570,6 +574,7 @@ private fun MetroLineList(
 private fun LineCard(
     title: String,
     subtitle: String,
+    colorHex: String,
     isFavorite: Boolean,
     isPinned: Boolean,
     group: String,
@@ -582,13 +587,20 @@ private fun LineCard(
     onDelete: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    val accent = LineColors.line(colorHex, MaterialTheme.colorScheme.primary)
 
     TransNoteCard(onClick = onClick) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                color = accent,
+                shape = MaterialTheme.shapes.small,
+                modifier = Modifier.width(4.dp).height(44.dp)
+            ) {}
+            Spacer(Modifier.width(10.dp))
             Icon(
                 if (isMetro) Icons.Filled.DirectionsSubway else Icons.Filled.DirectionsBus,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary
+                tint = accent
             )
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {

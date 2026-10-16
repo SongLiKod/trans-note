@@ -67,7 +67,9 @@ data class MapPoint(
     val title: String = "",
     val isTransfer: Boolean = false,
     /** 稳定标识（站点 id），用于点击站点后在地图上高亮跟随 */
-    val key: Long = 0L
+    val key: Long = 0L,
+    /** 站点自定义颜色（HEX）；空表示跟随线路颜色 */
+    val colorHex: String = ""
 )
 
 /** 地图内搜索用的站点（默认限定当前城市） */
@@ -142,6 +144,17 @@ private class TrackOverlay(
 
     var highlightKey: Long? = null
 
+    /** 站点圆点颜色：优先使用站点自定义色，其次换乘警示色，最后线路色 */
+    private fun dotColorOf(station: MapPoint): Int {
+        val hex = station.colorHex.trim()
+        if (hex.isNotEmpty()) {
+            return runCatching {
+                Color.parseColor(if (hex.startsWith("#")) hex else "#$hex")
+            }.getOrDefault(lineColor)
+        }
+        return if (station.isTransfer) transferColor else lineColor
+    }
+
     override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
         if (shadow || stations.isEmpty()) return
         val density = mapView.resources.displayMetrics.density
@@ -192,8 +205,7 @@ private class TrackOverlay(
             canvas.drawCircle(p.x.toFloat(), p.y.toFloat(), radius + 3f * density, ring)
             dot.color = when {
                 selected -> highlightColor
-                station.isTransfer -> transferColor
-                else -> lineColor
+                else -> dotColorOf(station)
             }
             canvas.drawCircle(p.x.toFloat(), p.y.toFloat(), radius, dot)
 
@@ -267,9 +279,10 @@ private fun TrackMapCanvas(
     highlightKey: Long?,
     onTapStation: ((Long) -> Unit)?,
     defaultCenter: Pair<Double, Double>?,
+    lineColorArgb: Int,
     modifier: Modifier = Modifier
 ) {
-    val lineColor = MaterialTheme.colorScheme.primary.toArgb()
+    val lineColor = lineColorArgb
     val transferColor = TransNoteTheme.colors.warning.toArgb()
     val highlightColor = TransNoteTheme.colors.danger.toArgb()
     val labelTextColor = MaterialTheme.colorScheme.onSurface.toArgb()
@@ -362,9 +375,11 @@ fun StationTrackMap(
     defaultCenter: Pair<Double, Double>? = null,
     searchItems: List<MapSearchItem> = emptyList(),
     allowFullscreen: Boolean = true,
-    emptyHint: String = "暂无坐标点，请为站点设置地图位置"
+    emptyHint: String = "暂无坐标点，请为站点设置地图位置",
+    lineColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primary
 ) {
     var fullscreen by remember { mutableStateOf(false) }
+    val lineArgb = lineColor.toArgb()
 
     Box(modifier = modifier.clip(MaterialTheme.shapes.medium)) {
         TrackMapCanvas(
@@ -373,6 +388,7 @@ fun StationTrackMap(
             highlightKey = selectedKey,
             onTapStation = onSelectKey,
             defaultCenter = defaultCenter,
+            lineColorArgb = lineArgb,
             modifier = Modifier.fillMaxSize()
         )
 
@@ -419,6 +435,7 @@ fun StationTrackMap(
             onSelectKey = onSelectKey,
             defaultCenter = defaultCenter,
             searchItems = searchItems,
+            lineColorArgb = lineArgb,
             onDismiss = { fullscreen = false }
         )
     }
@@ -432,6 +449,7 @@ private fun FullscreenTrackMapDialog(
     onSelectKey: ((Long) -> Unit)?,
     defaultCenter: Pair<Double, Double>?,
     searchItems: List<MapSearchItem>,
+    lineColorArgb: Int,
     onDismiss: () -> Unit
 ) {
     var keyword by remember { mutableStateOf("") }
@@ -466,6 +484,7 @@ private fun FullscreenTrackMapDialog(
                         }
                     },
                     defaultCenter = defaultCenter,
+                    lineColorArgb = lineColorArgb,
                     modifier = Modifier.fillMaxSize()
                 )
 

@@ -33,7 +33,8 @@ private val StationRowHeight = 72.dp
  * @param index 当前站点序号（0 起）
  * @param total 站点总数
  * @param isTransfer 是否为地铁换乘站（圆点高亮）
- * @param lineColor 竖线与圆点颜色
+ * @param lineColor 竖线颜色（线路颜色）与圆点默认颜色
+ * @param pointColor 当前站点圆点颜色（默认跟随线路颜色）
  * @param isDragging 拖拽中的行（编辑模式）
  * @param isSelected 是否为当前选中站点（在地图上高亮跟随）
  * @param onClick 点击整行回调（为空则不可点击 = 只读展示）
@@ -47,6 +48,7 @@ fun StationTimelineRow(
     isTransfer: Boolean,
     modifier: Modifier = Modifier,
     lineColor: Color = MaterialTheme.colorScheme.primary,
+    pointColor: Color = lineColor,
     isDragging: Boolean = false,
     isSelected: Boolean = false,
     onClick: (() -> Unit)? = null,
@@ -88,7 +90,7 @@ fun StationTimelineRow(
                     modifier = Modifier
                         .size(if (isSelected) 22.dp else 20.dp)
                         .clip(CircleShape)
-                        .background(lineColor)
+                        .background(pointColor)
                         .border(3.dp, MaterialTheme.colorScheme.surface, CircleShape)
                 )
             } else {
@@ -96,8 +98,8 @@ fun StationTimelineRow(
                     modifier = Modifier
                         .size(if (isSelected) 16.dp else 14.dp)
                         .clip(CircleShape)
-                        .background(if (isSelected) lineColor else MaterialTheme.colorScheme.surface)
-                        .border(3.dp, lineColor, CircleShape)
+                        .background(if (isSelected) pointColor else MaterialTheme.colorScheme.surface)
+                        .border(3.dp, pointColor, CircleShape)
                 )
             }
             Box(
