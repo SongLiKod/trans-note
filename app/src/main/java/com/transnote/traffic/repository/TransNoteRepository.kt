@@ -25,6 +25,25 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
+/** 从高德更新线路时的站点输入（含可选标记名称） */
+data class BusStationInput(
+    val name: String,
+    val latitude: Double,
+    val longitude: Double,
+    val markerNames: List<String> = emptyList()
+)
+
+/** 经过某站点的公交线路（用于「该站点有哪些线路经过」） */
+data class PassingBusLine(
+    val lineId: Long,
+    val lineName: String,
+    /** 0 = 上行，1 = 下行 */
+    val direction: Int,
+    /** 开往方向 */
+    val destination: String,
+    val stationId: Long
+)
+
 /** 城市内已标注坐标的站点（用于地图内搜索与默认中心定位） */
 data class CityStation(
     val name: String,
@@ -98,6 +117,14 @@ class TransNoteRepository(
         )
     }
 
+    /** 按名称获取标记 id，不存在则创建（用于导入时自动打标记） */
+    suspend fun ensureMarkerId(name: String): Long {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return 0L
+        db.stationMarkerDao().getAllOnce().firstOrNull { it.name == trimmed }?.let { return it.id }
+        return addMarker(trimmed)
+    }
+
     /** 重命名标记（站点上引用同一 id，改名后线路展示同步更新） */
     suspend fun renameMarker(id: Long, name: String) {
         val trimmed = name.trim()
@@ -163,6 +190,47 @@ class TransNoteRepository(
                 )
             }
         return result
+    }
+
+    /**
+     * 查找经过指定站点的所有公交线路（跨线路聚合）。
+     *
+     * 同站判定：坐标距离很近（≤100m），或站名归一化后相同且距离较近（≤500m），
+     * 因此同一物理站点在不同线路上录入后可以互相聚合。返回结果标明上行/下行与开往方向。
+     */
+    suspend fun findPassingBusLines(
+        latitude: Double,
+        longitude: Double,
+        name: String
+    ): List<PassingBusLine> {
+        if (!CoordinateUtils.isValid(latitude, longitude)) return emptyList()
+        val target = normalizeStationName(name)
+        val lineById = db.busLineDao().getAllOnce().associateBy { it.id }
+        return db.busStationDao().getAllOnce()
+            .filter { CoordinateUtils.isValid(it.latitude, it.longitude) }
+            .filter { station ->
+                val d = CoordinateUtils.distanceMeters(
+                    latitude, longitude, station.latitude!!, station.longitude!!
+                )
+                d <= 100.0 || (normalizeStationName(station.name) == target && d <= 500.0)
+            }
+            .mapNotNull { station ->
+                val line = lineById[station.lineId] ?: return@mapNotNull null
+                val destination = if (station.direction == BusStationEntity.DIRECTION_UP) {
+                    line.upDestination
+                } else {
+                    line.downDestination
+                }
+                PassingBusLine(
+                    lineId = line.id,
+                    lineName = line.lineName,
+                    direction = station.direction,
+                    destination = destination,
+                    stationId = station.id
+                )
+            }
+            .distinctBy { it.lineId to it.direction }
+            .sortedWith(compareBy({ it.lineName }, { it.direction }))
     }
 
     /** 城市中心（该城市所有已标注站点坐标的平均值），无数据返回 null */
@@ -321,6 +389,65 @@ class TransNoteRepository(
     }
 
     suspend fun deleteBusStationById(id: Long) = db.busStationDao().deleteById(id)
+
+    /**
+     * 用高德线路数据更新已有公交线路：
+     * - 更新首末班与当前方向的开往方向；
+     * - 按归一化站名对齐站点，更新坐标与标记，保留原站点的备注 / 图片 / 颜色等；
+     * - 删除高德结果中已不存在的站点。
+     */
+    suspend fun updateBusLineFromAmap(
+        lineId: Long,
+        direction: Int,
+        firstBus: String,
+        lastBus: String,
+        endStop: String,
+        stations: List<BusStationInput>
+    ) {
+        val line = getBusLine(lineId) ?: return
+        saveBusLine(
+            line.copy(
+                firstBus = firstBus.ifBlank { line.firstBus },
+                lastBus = lastBus.ifBlank { line.lastBus },
+                upDestination = if (direction == BusStationEntity.DIRECTION_UP) {
+                    endStop.ifBlank { line.upDestination }
+                } else line.upDestination,
+                downDestination = if (direction == BusStationEntity.DIRECTION_DOWN) {
+                    endStop.ifBlank { line.downDestination }
+                } else line.downDestination
+            )
+        )
+        val existing = getBusStations(lineId, direction)
+        val existingByName = existing.associateBy { normalizeStationName(it.name) }
+        val keptIds = mutableSetOf<Long>()
+        stations.forEachIndexed { index, input ->
+            val old = existingByName[normalizeStationName(input.name)]
+            val base = old ?: BusStationEntity(lineId = lineId, direction = direction, name = input.name)
+            val markerIds = if (input.markerNames.isNotEmpty()) {
+                input.markerNames.map { ensureMarkerId(it) }.filter { it > 0L }
+            } else {
+                base.markerIds
+            }
+            val id = saveBusStation(
+                base.copy(
+                    id = base.id,
+                    lineId = lineId,
+                    direction = direction,
+                    orderIndex = index,
+                    name = input.name,
+                    latitude = input.latitude,
+                    longitude = input.longitude,
+                    markerIds = markerIds
+                )
+            )
+            keptIds.add(id)
+        }
+        existing.filter { it.id !in keptIds }.forEach { deleteBusStationById(it.id) }
+    }
+
+    /** 城市名称 */
+    suspend fun getCityName(cityId: Long): String =
+        db.cityDao().getAllOnce().firstOrNull { it.cityId == cityId }?.cityName.orEmpty()
 
     /** 拖拽排序：按传入顺序重写 orderIndex */
     suspend fun reorderBusStations(ordered: List<BusStationEntity>) {

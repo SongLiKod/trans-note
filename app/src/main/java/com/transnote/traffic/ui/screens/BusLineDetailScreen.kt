@@ -10,27 +10,37 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DirectionsBus
 import androidx.compose.material.icons.filled.DirectionsSubway
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -40,6 +50,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,7 +63,10 @@ import com.transnote.traffic.AppContainer
 import com.transnote.traffic.data.database.BusStationEntity
 import com.transnote.traffic.data.database.BusStationWithTransfers
 import com.transnote.traffic.data.database.StationMarkerEntity
+import com.transnote.traffic.repository.PassingBusLine
+import com.transnote.traffic.repository.TransNoteRepository
 import com.transnote.traffic.ui.components.ConfirmDialog
+import com.transnote.traffic.utils.AmapBusLine
 import com.transnote.traffic.ui.components.DragReorderColumn
 import com.transnote.traffic.ui.components.LabeledTextField
 import com.transnote.traffic.ui.components.MapPoint
@@ -72,6 +86,10 @@ import com.transnote.traffic.utils.CoordinateUtils
 import com.transnote.traffic.utils.StationNameParser
 import com.transnote.traffic.viewmodel.BusLineDetailViewModel
 import com.transnote.traffic.viewmodel.containerViewModelFactory
+import kotlinx.coroutines.launch
+
+/** 线路轨迹地图在列表中的固定项下标，用于点击站点时把地图滚动到可见位置 */
+private const val MAP_ITEM_INDEX = 3
 
 /**
  * 公交线路详情页（PRD 3.2）：
@@ -92,18 +110,45 @@ fun BusLineDetailScreen(
     )
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val lineColor = LineColors.line(state.line?.colorHex, MaterialTheme.colorScheme.primary)
+    val showStationIndex by container.themeManager.showStationIndex
+        .collectAsStateWithLifecycle(initialValue = true)
+    val showPassingLines by container.themeManager.showPassingLines
+        .collectAsStateWithLifecycle(initialValue = true)
+    var passingStation by remember { mutableStateOf<BusStationEntity?>(null) }
+    // 从高德更新线路
+    val amapKey by container.themeManager.amapKey.collectAsStateWithLifecycle(initialValue = "")
+    val amapCandidates by viewModel.amapCandidates.collectAsStateWithLifecycle()
+    val amapBusy by viewModel.amapBusy.collectAsStateWithLifecycle()
+    val amapMessage by viewModel.amapMessage.collectAsStateWithLifecycle()
+    var showAmapUpdate by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
     var editMode by remember { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
     var newStationName by remember { mutableStateOf("") }
     var showBatchAdd by remember { mutableStateOf(false) }
     var confirmDeleteLine by remember { mutableStateOf(false) }
     var pendingDeleteStation by remember { mutableStateOf<BusStationEntity?>(null) }
-    // 点击站点后在下方地图上高亮跟随
+    // 点击站点后在地图上高亮跟随
     var selectedKey by remember { mutableStateOf<Long?>(null) }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    // 点击站点：高亮该站并把地图滚动到可见位置（地图居中显示该站）
+    val selectStation: (Long) -> Unit = { id ->
+        selectedKey = id
+        scope.launch { listState.animateScrollToItem(MAP_ITEM_INDEX) }
+    }
 
     LaunchedEffect(state.direction) { selectedKey = null }
 
+    LaunchedEffect(amapMessage) {
+        amapMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.consumeAmapMessage()
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TransNoteTopBar(
                 title = state.line?.lineName ?: "公交线路",
@@ -144,6 +189,15 @@ fun BusLineDetailScreen(
                                 onClick = { menuExpanded = false; onEditLine() }
                             )
                             DropdownMenuItem(
+                                text = { Text("从高德更新线路") },
+                                leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    showAmapUpdate = true
+                                    viewModel.searchAmapUpdate(amapKey, state.line?.lineName.orEmpty())
+                                }
+                            )
+                            DropdownMenuItem(
                                 text = { Text("删除线路", color = TransNoteTheme.colors.danger) },
                                 leadingIcon = {
                                     Icon(
@@ -161,6 +215,7 @@ fun BusLineDetailScreen(
         }
     ) { padding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -363,6 +418,8 @@ fun BusLineDetailScreen(
                             editMode = true,
                             isDragging = isDragging,
                             isSelected = false,
+                            showIndex = showStationIndex,
+                            showPassing = showPassingLines,
                             lineColor = lineColor,
                             lineColorHex = state.line?.colorHex.orEmpty(),
                             markers = state.mapContext.markers,
@@ -370,6 +427,7 @@ fun BusLineDetailScreen(
                             onClick = { onOpenStation(wrapper.station.id) },
                             onSelect = {},
                             onDelete = { pendingDeleteStation = wrapper.station },
+                            onShowPassing = { passingStation = wrapper.station },
                             onOpenEntrance = onOpenEntrance
                         )
                     }
@@ -383,13 +441,16 @@ fun BusLineDetailScreen(
                                 editMode = false,
                                 isDragging = false,
                                 isSelected = selectedKey == wrapper.station.id,
+                                showIndex = showStationIndex,
+                                showPassing = showPassingLines,
                                 lineColor = lineColor,
                                 lineColorHex = state.line?.colorHex.orEmpty(),
                                 markers = state.mapContext.markers,
                                 metroStationLabels = state.mapContext.metroStationLabels,
                                 onClick = { onOpenStation(wrapper.station.id) },
-                                onSelect = { selectedKey = wrapper.station.id },
+                                onSelect = { selectStation(wrapper.station.id) },
                                 onDelete = {},
+                                onShowPassing = { passingStation = wrapper.station },
                                 onOpenEntrance = onOpenEntrance
                             )
                         }
@@ -460,6 +521,198 @@ fun BusLineDetailScreen(
             onDismiss = { pendingDeleteStation = null }
         )
     }
+
+    passingStation?.let { station ->
+        PassingLinesDialog(
+            repository = container.repository,
+            station = station,
+            onDismiss = { passingStation = null }
+        )
+    }
+
+    if (showAmapUpdate) {
+        AmapUpdateDialog(
+            lineName = state.line?.lineName.orEmpty(),
+            busy = amapBusy,
+            message = amapMessage,
+            candidates = amapCandidates,
+            onSearch = { keyword -> viewModel.searchAmapUpdate(amapKey, keyword) },
+            onApply = { result ->
+                viewModel.applyAmapUpdate(amapKey, result)
+                showAmapUpdate = false
+            },
+            onDismiss = {
+                showAmapUpdate = false
+                viewModel.clearAmapUpdate()
+            }
+        )
+    }
+}
+
+/** 从高德更新已有线路：输入/确认线路名，选择结果后更新线路与站点 */
+@Composable
+private fun AmapUpdateDialog(
+    lineName: String,
+    busy: Boolean,
+    message: String?,
+    candidates: List<AmapBusLine>,
+    onSearch: (String) -> Unit,
+    onApply: (AmapBusLine) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var keyword by remember { mutableStateOf(lineName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = MaterialTheme.shapes.large,
+        title = { Text("从高德更新线路") },
+        text = {
+            Column {
+                Text(
+                    "按线路名重新获取首末班、开往方向与站点坐标（保留原备注 / 图片），并重新识别站点周边地铁 / 火车站 / 机场。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TransNoteTheme.colors.hintText
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = keyword,
+                        onValueChange = { keyword = it },
+                        label = { Text("线路名称 / 编号") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    IconButton(onClick = { onSearch(keyword) }, enabled = !busy) {
+                        if (busy) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(
+                                Icons.Filled.Search,
+                                contentDescription = "查询",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+                message?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TransNoteTheme.colors.hintText
+                    )
+                }
+                if (candidates.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
+                        items(candidates, key = { it.id + it.name }) { line ->
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onApply(line) }
+                                    .padding(vertical = 10.dp)
+                            ) {
+                                Text(line.name, style = MaterialTheme.typography.bodyLarge)
+                                val detail = buildString {
+                                    val route = listOf(line.startStop, line.endStop)
+                                        .filter { it.isNotBlank() }.joinToString(" → ")
+                                    if (route.isNotBlank()) append(route)
+                                    if (line.stations.isNotEmpty()) {
+                                        if (isNotEmpty()) append(" · ")
+                                        append("${line.stations.size} 站")
+                                    }
+                                    if (line.startTime.isNotBlank()) {
+                                        if (isNotEmpty()) append(" · ")
+                                        append("首末班 ${line.startTime}~${line.endTime}")
+                                    }
+                                }
+                                if (detail.isNotBlank()) {
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        detail,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TransNoteTheme.colors.hintText,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
+        }
+    )
+}
+
+/**
+ * 「经过该站点的线路」弹窗：按坐标/同名聚合所有线路，标明上行/下行与开往方向。
+ */
+@Composable
+private fun PassingLinesDialog(
+    repository: TransNoteRepository,
+    station: BusStationEntity,
+    onDismiss: () -> Unit
+) {
+    var lines by remember(station.id) { mutableStateOf<List<PassingBusLine>?>(null) }
+    LaunchedEffect(station.id) {
+        lines = repository.findPassingBusLines(
+            station.latitude ?: 0.0,
+            station.longitude ?: 0.0,
+            station.name
+        )
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = MaterialTheme.shapes.large,
+        title = { Text("经过「${station.name}」的线路") },
+        text = {
+            val list = lines
+            when {
+                list == null -> Text(
+                    "查询中…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TransNoteTheme.colors.hintText
+                )
+                list.isEmpty() -> Text(
+                    "暂无其它线路经过该站点（同一站点需坐标相近或站名相同）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TransNoteTheme.colors.hintText
+                )
+                else -> LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                    items(list, key = { "${it.lineId}-${it.direction}" }) { item ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.DirectionsBus,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(item.lineName, style = MaterialTheme.typography.bodyLarge)
+                                val direction = if (item.direction == 0) "上行" else "下行"
+                                val dest = if (item.destination.isBlank()) "" else " · 开往 ${item.destination}"
+                                Text(
+                                    "$direction$dest",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TransNoteTheme.colors.hintText
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
+        }
+    )
 }
 
 /**
@@ -475,6 +728,8 @@ private fun BusStationTimelineItem(
     editMode: Boolean,
     isDragging: Boolean,
     isSelected: Boolean,
+    showIndex: Boolean,
+    showPassing: Boolean,
     lineColor: Color,
     lineColorHex: String,
     markers: List<StationMarkerEntity>,
@@ -482,6 +737,7 @@ private fun BusStationTimelineItem(
     onClick: () -> Unit,
     onSelect: () -> Unit,
     onDelete: () -> Unit,
+    onShowPassing: () -> Unit,
     onOpenEntrance: (Long, Long) -> Unit
 ) {
     val station = wrapper.station
@@ -492,6 +748,7 @@ private fun BusStationTimelineItem(
         isTransfer = station.isMetroTransfer,
         isDragging = isDragging,
         isSelected = isSelected,
+        showIndex = showIndex,
         lineColor = lineColor,
         pointColor = LineColors.station(station.colorHex, lineColorHex, lineColor),
         onClick = if (editMode) onClick else onSelect,
@@ -507,6 +764,16 @@ private fun BusStationTimelineItem(
                         Icons.Filled.Delete,
                         contentDescription = "删除站点",
                         tint = TransNoteTheme.colors.danger
+                    )
+                }
+            }
+            // 站点右侧按钮：查看经过该站点的所有公交线路（可在设置中关闭）
+            if (showPassing && CoordinateUtils.isValid(station.latitude, station.longitude)) {
+                IconButton(onClick = onShowPassing) {
+                    Icon(
+                        Icons.Filled.DirectionsBus,
+                        contentDescription = "经过线路",
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
             }
@@ -533,7 +800,10 @@ private fun BusStationTimelineItem(
         }
         val sub = buildList {
             if (station.note.isNotBlank()) add(station.note)
-            if (CoordinateUtils.isValid(station.latitude, station.longitude)) add("已标注地图点位")
+            // 「已标注地图点位」仅在编辑界面显示，预览界面保持简洁
+            if (editMode && CoordinateUtils.isValid(station.latitude, station.longitude)) {
+                add("已标注地图点位")
+            }
             if (station.imagePaths.isNotEmpty()) add("${station.imagePaths.size} 张图片")
         }.joinToString(" · ")
         if (sub.isNotBlank()) {

@@ -3,6 +3,7 @@ package com.transnote.traffic.utils
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -22,6 +23,9 @@ class ThemeManager(private val context: Context) {
 
     private val themeKey = stringPreferencesKey("theme_mode")
     private val cityKey = longPreferencesKey("selected_city_id")
+    private val amapKeyKey = stringPreferencesKey("amap_api_key")
+    private val showStationIndexKey = booleanPreferencesKey("show_station_index")
+    private val showPassingLinesKey = booleanPreferencesKey("show_passing_lines")
 
     /** 当前主题模式（默认跟随系统） */
     val themeMode: Flow<ThemeMode> = context.dataStore.data.map { prefs ->
@@ -42,6 +46,39 @@ class ThemeManager(private val context: Context) {
     suspend fun setSelectedCityId(cityId: Long) {
         context.dataStore.edit { prefs ->
             prefs[cityKey] = cityId
+        }
+    }
+
+    /** 高德 Web 服务 API Key（用于在线导入公交线路，空表示未配置） */
+    val amapKey: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[amapKeyKey].orEmpty()
+    }
+
+    suspend fun setAmapKey(key: String) {
+        context.dataStore.edit { prefs ->
+            prefs[amapKeyKey] = key.trim()
+        }
+    }
+
+    /** 是否在站点列表的小圆圈内显示序号（默认开启） */
+    val showStationIndex: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[showStationIndexKey] ?: true
+    }
+
+    suspend fun setShowStationIndex(show: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[showStationIndexKey] = show
+        }
+    }
+
+    /** 是否在站点列表显示「经过线路」（站点右侧按钮，点击查看经过该站的所有线路，默认开启） */
+    val showPassingLines: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[showPassingLinesKey] ?: true
+    }
+
+    suspend fun setShowPassingLines(show: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[showPassingLinesKey] = show
         }
     }
 }

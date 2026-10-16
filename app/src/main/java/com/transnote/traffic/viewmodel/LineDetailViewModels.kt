@@ -8,13 +8,20 @@ import com.transnote.traffic.data.database.BusStationWithTransfers
 import com.transnote.traffic.data.database.MetroLineEntity
 import com.transnote.traffic.data.database.MetroStationWithEntrances
 import com.transnote.traffic.data.database.StationMarkerEntity
+import com.transnote.traffic.repository.BusStationInput
 import com.transnote.traffic.repository.CityStation
 import com.transnote.traffic.repository.TransNoteRepository
+import com.transnote.traffic.utils.AmapApi
+import com.transnote.traffic.utils.AmapBusLine
 import com.transnote.traffic.utils.DragReorder
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
@@ -78,6 +85,14 @@ class BusLineDetailViewModel(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BusLineDetailUiState())
 
+    // ---- 从高德更新线路（已录入线路的刷新） ----
+    private val _amapCandidates = MutableStateFlow<List<AmapBusLine>>(emptyList())
+    val amapCandidates: StateFlow<List<AmapBusLine>> = _amapCandidates.asStateFlow()
+    private val _amapBusy = MutableStateFlow(false)
+    val amapBusy: StateFlow<Boolean> = _amapBusy.asStateFlow()
+    private val _amapMessage = MutableStateFlow<String?>(null)
+    val amapMessage: StateFlow<String?> = _amapMessage.asStateFlow()
+
     init {
         viewModelScope.launch {
             val line = repo.getBusLine(lineId) ?: return@launch
@@ -91,6 +106,75 @@ class BusLineDetailViewModel(
 
     fun setDirection(value: Int) {
         direction.value = value
+    }
+
+    /** 按线路名（或输入关键词）查询高德候选线路，供用户选择后更新 */
+    fun searchAmapUpdate(key: String, keyword: String) {
+        viewModelScope.launch {
+            _amapBusy.value = true
+            _amapMessage.value = null
+            _amapCandidates.value = emptyList()
+            val line = repo.getBusLine(lineId)
+            val cityName = line?.let { repo.getCityName(it.cityId) }.orEmpty()
+            val query = keyword.trim().ifBlank { line?.lineName.orEmpty() }
+            if (key.isBlank()) {
+                _amapMessage.value = "请先在「设置 → 高德地图 API」填写 Key"
+                _amapBusy.value = false
+                return@launch
+            }
+            AmapApi.searchBusLines(key, query, cityName)
+                .onSuccess { list ->
+                    _amapCandidates.value = list
+                    if (list.isEmpty()) _amapMessage.value = "未查询到线路，请检查名称或城市"
+                }
+                .onFailure { _amapMessage.value = it.message ?: "查询失败，请检查网络或 Key" }
+            _amapBusy.value = false
+        }
+    }
+
+    /** 用选中的高德线路更新当前线路（首末班 / 开往方向 / 站点坐标与标记） */
+    fun applyAmapUpdate(key: String, result: AmapBusLine) {
+        viewModelScope.launch {
+            _amapBusy.value = true
+            _amapMessage.value = "正在更新线路与站点…"
+            val inputs = coroutineScope {
+                result.stations.chunked(4).flatMap { chunk ->
+                    chunk.map { station ->
+                        async {
+                            val markers = AmapApi.detectNearbyTransit(
+                                key, station.latitude, station.longitude
+                            ).map { it.markerName }
+                            BusStationInput(
+                                name = station.name,
+                                latitude = station.latitude,
+                                longitude = station.longitude,
+                                markerNames = markers
+                            )
+                        }
+                    }.awaitAll()
+                }
+            }
+            repo.updateBusLineFromAmap(
+                lineId = lineId,
+                direction = direction.value,
+                firstBus = result.startTime,
+                lastBus = result.endTime,
+                endStop = result.endStop,
+                stations = inputs
+            )
+            _amapCandidates.value = emptyList()
+            _amapMessage.value = "已更新「${result.name}」，共 ${inputs.size} 个站点"
+            _amapBusy.value = false
+        }
+    }
+
+    fun clearAmapUpdate() {
+        _amapCandidates.value = emptyList()
+        _amapMessage.value = null
+    }
+
+    fun consumeAmapMessage() {
+        _amapMessage.value = null
     }
 
     fun addStation(name: String) = addStations(listOf(name))

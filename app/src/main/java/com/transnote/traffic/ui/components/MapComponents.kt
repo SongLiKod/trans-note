@@ -12,6 +12,7 @@ import android.graphics.Typeface
 import android.text.TextPaint
 import android.text.TextUtils
 import android.view.MotionEvent
+import android.view.View
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,15 +38,19 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -293,6 +298,26 @@ private class TrackOverlay(
     }
 }
 
+/**
+ * 挂起直到 [MapView] 完成首次布局。
+ * 用布局监听而非轮询帧，确保「先离屏预取、后滚入可视区」的地图也能在布局完成后正确定位相机。
+ */
+private suspend fun awaitMapLayout(mapView: MapView) = suspendCancellableCoroutine<Unit> { cont ->
+    if (mapView.isLayoutOccurred()) {
+        cont.resume(Unit)
+        return@suspendCancellableCoroutine
+    }
+    var listener: View.OnLayoutChangeListener? = null
+    listener = View.OnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+        if (mapView.isLayoutOccurred()) {
+            v.removeOnLayoutChangeListener(listener)
+            if (cont.isActive) cont.resume(Unit)
+        }
+    }
+    mapView.addOnLayoutChangeListener(listener)
+    cont.invokeOnCancellation { listener?.let { mapView.removeOnLayoutChangeListener(it) } }
+}
+
 /** 选点地图上的标记点（白边圆点） */
 private class PickerDotOverlay(private val color: Int) : Overlay() {
     var point: GeoPoint? = null
@@ -334,27 +359,59 @@ private fun TrackMapCanvas(
     // 标记图标：栅格化为位图供原生 Canvas 绘制（地图气泡内不写文字）
     val iconBitmaps = rememberMarkerIconBitmaps()
 
-    val mapView = rememberLifecycleMapView {
-        val base = defaultCenter ?: points.firstOrNull()?.let { it.latitude to it.longitude }
-        if (base != null) {
-            val (lat, lng) = CoordinateUtils.wgs84ToGcj02(base.first, base.second)
-            controller.setCenter(GeoPoint(lat, lng))
-            controller.setZoom(13.0)
-        } else {
-            val (lat, lng) = CoordinateUtils.wgs84ToGcj02(CHINA_CENTER_LAT, CHINA_CENTER_LNG)
-            controller.setCenter(GeoPoint(lat, lng))
-            controller.setZoom(4.0)
+    val mapView = rememberLifecycleMapView()
+
+    // 站点集合签名：仅在站点内容真正变化时才重新定位相机，
+    // 避免因每次重组产生的新 List 实例（引用不同）而反复触发相机动画。
+    val pointsSignature = points.joinToString(";") { "${it.key}#${it.latitude},${it.longitude}" }
+    val density = LocalDensity.current
+
+    // 相机定位 / 自动缩放放在 LaunchedEffect 中，只在目标站点或站点集合变化时执行一次。
+    // 绝不能放在 AndroidView.update 内：该 update 会在列表预取（PrefetchScheduler）与
+    // 重排时被反复调用，导致 zoomToBoundingBox/animateTo 反复执行，主线程 99% 占用而 ANR。
+    LaunchedEffect(highlightKey, pointsSignature, defaultCenter) {
+        // osmdroid bug #2028：地图首次完成布局前，投影的 zoom 为 NaN，
+        // zoomToBoundingBox 会在 Projection.getCloserPixel 中 `while(pPixel >= limit) pPixel -= NaN`
+        // 造成主线程死循环（应用无响应）。必须等布局完成后再操作相机。
+        awaitMapLayout(mapView)
+
+        val target = highlightKey?.let { key -> points.firstOrNull { it.key == key } }
+        when {
+            target != null -> {
+                val (lat, lng) = CoordinateUtils.wgs84ToGcj02(target.latitude, target.longitude)
+                mapView.controller.animateTo(GeoPoint(lat, lng), 16.0, 400L)
+            }
+            points.isNotEmpty() -> {
+                val geo = points.map {
+                    val (la, ln) = CoordinateUtils.wgs84ToGcj02(it.latitude, it.longitude)
+                    GeoPoint(la, ln)
+                }
+                runCatching {
+                    if (geo.size == 1) {
+                        mapView.controller.setZoom(16.0)
+                        mapView.controller.setCenter(geo.first())
+                    } else {
+                        mapView.zoomToBoundingBox(
+                            BoundingBox.fromGeoPoints(geo),
+                            false,
+                            (46 * density.density).toInt()
+                        )
+                    }
+                }
+            }
+            else -> {
+                val base = defaultCenter ?: (CHINA_CENTER_LAT to CHINA_CENTER_LNG)
+                val (lat, lng) = CoordinateUtils.wgs84ToGcj02(base.first, base.second)
+                mapView.controller.setCenter(GeoPoint(lat, lng))
+                mapView.controller.setZoom(if (defaultCenter != null) 13.0 else 4.0)
+            }
         }
     }
-
-    val lastFit = remember { arrayOfNulls<List<MapPoint>>(1) }
-    val lastCameraKey = remember { arrayOfNulls<Long>(1) }
 
     AndroidView(
         factory = { mapView },
         modifier = modifier,
         update = { map ->
-            val density = map.resources.displayMetrics.density
             map.overlays.clear()
 
             val overlay = TrackOverlay(
@@ -373,39 +430,6 @@ private fun TrackMapCanvas(
             )
             overlay.highlightKey = highlightKey
             map.overlays.add(overlay)
-
-            val target = highlightKey?.let { key -> points.firstOrNull { it.key == key } }
-            when {
-                target != null -> {
-                    if (lastCameraKey[0] != highlightKey) {
-                        val (lat, lng) = CoordinateUtils.wgs84ToGcj02(target.latitude, target.longitude)
-                        map.controller.animateTo(GeoPoint(lat, lng), 16.0, 400L)
-                        lastCameraKey[0] = highlightKey
-                    }
-                }
-                else -> {
-                    lastCameraKey[0] = null
-                    if (points.isNotEmpty() && lastFit[0] != points) {
-                        val geo = points.map {
-                            val (la, ln) = CoordinateUtils.wgs84ToGcj02(it.latitude, it.longitude)
-                            GeoPoint(la, ln)
-                        }
-                        runCatching {
-                            if (geo.size == 1) {
-                                map.controller.setZoom(16.0)
-                                map.controller.setCenter(geo.first())
-                            } else {
-                                map.zoomToBoundingBox(
-                                    BoundingBox.fromGeoPoints(geo),
-                                    true,
-                                    (46 * density).toInt()
-                                )
-                            }
-                        }
-                        lastFit[0] = points
-                    }
-                }
-            }
             map.invalidate()
         }
     )

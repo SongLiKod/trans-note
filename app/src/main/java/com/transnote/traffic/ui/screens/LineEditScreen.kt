@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -23,13 +26,18 @@ import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LocationCity
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.TravelExplore
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -37,6 +45,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -65,7 +74,9 @@ import com.transnote.traffic.ui.components.TransNoteCard
 import com.transnote.traffic.ui.components.TransNoteTopBar
 import com.transnote.traffic.ui.theme.LineColors
 import com.transnote.traffic.ui.theme.TransNoteTheme
+import com.transnote.traffic.utils.AmapBusLine
 import com.transnote.traffic.utils.StationNameParser
+import com.transnote.traffic.viewmodel.LineEditUiState
 import com.transnote.traffic.viewmodel.LineEditViewModel
 import com.transnote.traffic.viewmodel.LineType
 import com.transnote.traffic.viewmodel.StationDraft
@@ -97,6 +108,9 @@ fun LineEditScreen(
     var colorIndex by remember { mutableStateOf<Int?>(null) }
     var newStationName by remember { mutableStateOf("") }
     var showBatchAdd by remember { mutableStateOf(false) }
+    var showAmapImport by remember { mutableStateOf(false) }
+    val amapKey by container.themeManager.amapKey
+        .collectAsStateWithLifecycle(initialValue = "")
 
     // OCR 识别结果自动填充表单
     LaunchedEffect(ocrLines) {
@@ -214,6 +228,16 @@ fun LineEditScreen(
                         Spacer(Modifier.width(8.dp))
                         Text("拍照识别站牌（离线 OCR）")
                     }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { viewModel.clearAmapResults(); showAmapImport = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Icon(Icons.Filled.TravelExplore, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("从高德导入线路（自动关联地图站点）")
+                    }
                 }
             }
 
@@ -236,12 +260,17 @@ fun LineEditScreen(
                     )
                 }
                 Spacer(Modifier.height(8.dp))
-                if (state.editDirection == BusStationEntity.DIRECTION_DOWN && state.upStations.isNotEmpty()) {
+                val editingDown = state.editDirection == BusStationEntity.DIRECTION_DOWN
+                val otherStations = if (editingDown) state.upStations else state.downStations
+                if (otherStations.isNotEmpty()) {
                     OutlinedButton(
-                        onClick = viewModel::copyUpToDown,
+                        onClick = viewModel::copyFromOtherDirection,
                         shape = MaterialTheme.shapes.small
                     ) {
-                        Text("复制上行站点到下行")
+                        Text(
+                            if (editingDown) "复制上行→下行（站点顺序相反）"
+                            else "复制下行→上行（站点顺序相反）"
+                        )
                     }
                     Spacer(Modifier.height(8.dp))
                 }
@@ -389,6 +418,20 @@ fun LineEditScreen(
         }
     }
 
+    if (showAmapImport) {
+        AmapImportDialog(
+            state = state,
+            amapKey = amapKey,
+            onQueryChange = viewModel::setAmapQuery,
+            onSearch = { viewModel.searchAmap(amapKey) },
+            onApply = { line ->
+                viewModel.applyAmapLine(line)
+                showAmapImport = false
+            },
+            onDismiss = { showAmapImport = false }
+        )
+    }
+
     if (showBatchAdd) {
         var batchText by remember { mutableStateOf("") }
         androidx.compose.material3.AlertDialog(
@@ -461,13 +504,23 @@ fun LineEditScreen(
             shape = MaterialTheme.shapes.large,
             title = { Text("站点颜色") },
             text = {
-                ColorPickerRow(
-                    label = "选择该站点圆点颜色（可单独设置，默认跟随线路）",
-                    selectedHex = current,
-                    onSelect = { viewModel.setStationColor(index, it) },
-                    inheritLabel = "跟随线路",
-                    onInherit = { viewModel.setStationColor(index, "") }
-                )
+                Column {
+                    ColorPickerRow(
+                        label = "选择该站点圆点颜色（可单独设置，默认跟随线路）",
+                        selectedHex = current,
+                        onSelect = { viewModel.setStationColor(index, it) },
+                        inheritLabel = "跟随线路",
+                        onInherit = { viewModel.setStationColor(index, "") }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { viewModel.applyStationColorToAll(current) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text("把当前颜色应用到整条线路所有站点")
+                    }
+                }
             },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = { colorIndex = null }) {
@@ -536,4 +589,118 @@ private fun CitySelector(
             }
         }
     }
+}
+
+/**
+ * 高德在线导入线路弹窗：输入线路名称 → 查询 → 选择结果，
+ * 自动填充线路信息并把站点（含经纬度）关联到地图。
+ */
+@Composable
+private fun AmapImportDialog(
+    state: LineEditUiState,
+    amapKey: String,
+    onQueryChange: (String) -> Unit,
+    onSearch: () -> Unit,
+    onApply: (AmapBusLine) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = MaterialTheme.shapes.large,
+        title = { Text("从高德导入线路") },
+        text = {
+            Column {
+                if (amapKey.isBlank()) {
+                    Text(
+                        "尚未配置高德 Web 服务 Key，请到「设置 → 高德地图 API」填写后再试。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TransNoteTheme.colors.danger
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+                Text(
+                    "输入公交 / 地铁线路名称或编号（如 302、地铁2号线）。导入后自动填充线路名、开往方向、首末班与站点经纬度，并识别站点周边的地铁 / 火车站 / 机场自动打标记。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TransNoteTheme.colors.hintText
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = state.amapQuery,
+                        onValueChange = onQueryChange,
+                        label = { Text("线路名称 / 编号") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    IconButton(
+                        onClick = onSearch,
+                        enabled = !state.amapSearching && amapKey.isNotBlank()
+                    ) {
+                        if (state.amapSearching) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                Icons.Filled.Search,
+                                contentDescription = "查询",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+                state.amapMessage?.let { msg ->
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        msg,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TransNoteTheme.colors.hintText
+                    )
+                }
+                if (state.amapResults.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
+                        items(state.amapResults, key = { it.id + it.name }) { line ->
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onApply(line) }
+                                    .padding(vertical = 10.dp)
+                            ) {
+                                Text(line.name, style = MaterialTheme.typography.bodyLarge)
+                                val detail = buildString {
+                                    val route = listOf(line.startStop, line.endStop)
+                                        .filter { it.isNotBlank() }.joinToString(" → ")
+                                    if (route.isNotBlank()) append(route)
+                                    if (line.stations.isNotEmpty()) {
+                                        if (isNotEmpty()) append(" · ")
+                                        append("${line.stations.size} 站")
+                                    }
+                                    if (line.startTime.isNotBlank()) {
+                                        if (isNotEmpty()) append(" · ")
+                                        append("首末班 ${line.startTime}~${line.endTime}")
+                                    }
+                                }
+                                if (detail.isNotBlank()) {
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        detail,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TransNoteTheme.colors.hintText,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
+        }
+    )
 }

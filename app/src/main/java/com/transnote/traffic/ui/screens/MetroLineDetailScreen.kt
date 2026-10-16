@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -35,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,6 +67,10 @@ import com.transnote.traffic.utils.CoordinateUtils
 import com.transnote.traffic.utils.StationNameParser
 import com.transnote.traffic.viewmodel.MetroLineDetailViewModel
 import com.transnote.traffic.viewmodel.containerViewModelFactory
+import kotlinx.coroutines.launch
+
+/** 线路轨迹地图在列表中的固定项下标，用于点击站点时把地图滚动到可见位置 */
+private const val MAP_ITEM_INDEX = 2
 
 /**
  * 地铁线路详情页（PRD 3.3）：以线路图（竖线 + 站点圆点）展示站点与出入口数量，
@@ -83,14 +89,22 @@ fun MetroLineDetailScreen(
     )
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val lineColor = LineColors.line(state.line?.colorHex, MaterialTheme.colorScheme.primary)
+    val showStationIndex by container.themeManager.showStationIndex
+        .collectAsStateWithLifecycle(initialValue = true)
     var editMode by remember { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
     var newStationName by remember { mutableStateOf("") }
     var showBatchAdd by remember { mutableStateOf(false) }
     var confirmDeleteLine by remember { mutableStateOf(false) }
     var pendingDeleteStation by remember { mutableStateOf<Pair<Long, String>?>(null) }
-    // 点击站点后在下方地图上高亮跟随
+    // 点击站点后在地图上高亮跟随
     var selectedKey by remember { mutableStateOf<Long?>(null) }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val selectStation: (Long) -> Unit = { id ->
+        selectedKey = id
+        scope.launch { listState.animateScrollToItem(MAP_ITEM_INDEX) }
+    }
 
     Scaffold(
         topBar = {
@@ -150,6 +164,7 @@ fun MetroLineDetailScreen(
         }
     ) { padding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -278,6 +293,7 @@ fun MetroLineDetailScreen(
                             editMode = true,
                             isDragging = isDragging,
                             isSelected = false,
+                            showIndex = showStationIndex,
                             lineColor = lineColor,
                             lineColorHex = state.line?.colorHex.orEmpty(),
                             markers = state.mapContext.markers,
@@ -296,11 +312,12 @@ fun MetroLineDetailScreen(
                                 editMode = false,
                                 isDragging = false,
                                 isSelected = selectedKey == wrapper.station.id,
+                                showIndex = showStationIndex,
                                 lineColor = lineColor,
                                 lineColorHex = state.line?.colorHex.orEmpty(),
                                 markers = state.mapContext.markers,
                                 onClick = { onOpenStation(wrapper.station.id) },
-                                onSelect = { selectedKey = wrapper.station.id },
+                                onSelect = { selectStation(wrapper.station.id) },
                                 onDelete = {}
                             )
                         }
@@ -382,6 +399,7 @@ private fun MetroStationTimelineItem(
     editMode: Boolean,
     isDragging: Boolean,
     isSelected: Boolean,
+    showIndex: Boolean,
     lineColor: Color,
     lineColorHex: String,
     markers: List<StationMarkerEntity>,
@@ -397,6 +415,7 @@ private fun MetroStationTimelineItem(
         isTransfer = wrapper.entrances.isNotEmpty(),
         isDragging = isDragging,
         isSelected = isSelected,
+        showIndex = showIndex,
         lineColor = lineColor,
         pointColor = LineColors.station(station.colorHex, lineColorHex, lineColor),
         onClick = if (editMode) onClick else onSelect,

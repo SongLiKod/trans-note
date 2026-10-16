@@ -27,16 +27,19 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +57,7 @@ import com.transnote.traffic.ui.theme.TransNoteTheme
 import com.transnote.traffic.utils.ThemeMode
 import com.transnote.traffic.viewmodel.SettingsViewModel
 import com.transnote.traffic.viewmodel.containerViewModelFactory
+import kotlinx.coroutines.launch
 
 /**
  * 设置页：主题三选一（PRD 3.6）+ 本地备份导出/导入（PRD 3.5）+ 数据统计。
@@ -71,6 +75,16 @@ fun SettingsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val activity = LocalContext.current as? android.app.Activity
     var pendingRestart by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    // 高德 Web 服务 Key（在线导入线路用）
+    val savedAmapKey by container.themeManager.amapKey
+        .collectAsStateWithLifecycle(initialValue = "")
+    var amapKeyInput by remember(savedAmapKey) { mutableStateOf(savedAmapKey) }
+    val showStationIndex by container.themeManager.showStationIndex
+        .collectAsStateWithLifecycle(initialValue = true)
+    val showPassingLines by container.themeManager.showPassingLines
+        .collectAsStateWithLifecycle(initialValue = true)
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
@@ -140,6 +154,85 @@ fun SettingsScreen(
                             Spacer(Modifier.width(8.dp))
                             Text(mode.label, style = MaterialTheme.typography.bodyLarge)
                         }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+            SectionTitle("高德地图 API")
+            TransNoteCard {
+                Column {
+                    Text(
+                        "填写高德开放平台「Web 服务」类型的 Key，用于在线导入公交线路，并自动把线路站点关联到地图点位。留空则仅使用离线功能。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TransNoteTheme.colors.hintText
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = amapKeyInput,
+                        onValueChange = { amapKeyInput = it },
+                        label = { Text("高德 Web 服务 Key") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                scope.launch { container.themeManager.setAmapKey(amapKeyInput) }
+                            },
+                            shape = MaterialTheme.shapes.small
+                        ) { Text("保存") }
+                        OutlinedButton(
+                            onClick = { amapKeyInput = savedAmapKey },
+                            shape = MaterialTheme.shapes.small
+                        ) { Text("还原") }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+            SectionTitle("显示设置")
+            TransNoteCard {
+                Column {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("站点列表显示序号", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                "在站点列表的小圆圈内显示站点序号",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TransNoteTheme.colors.hintText
+                            )
+                        }
+                        Switch(
+                            checked = showStationIndex,
+                            onCheckedChange = { checked ->
+                                scope.launch { container.themeManager.setShowStationIndex(checked) }
+                            }
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("站点显示经过线路", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                "在站点右侧显示按钮，点击查看经过该站的所有公交线路与方向",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TransNoteTheme.colors.hintText
+                            )
+                        }
+                        Switch(
+                            checked = showPassingLines,
+                            onCheckedChange = { checked ->
+                                scope.launch { container.themeManager.setShowPassingLines(checked) }
+                            }
+                        )
                     }
                 }
             }
