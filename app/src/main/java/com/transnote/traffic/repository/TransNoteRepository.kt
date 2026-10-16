@@ -7,6 +7,7 @@ import com.transnote.traffic.data.database.BusStationEntranceCrossRef
 import com.transnote.traffic.data.database.BusStationEntity
 import com.transnote.traffic.data.database.BusStationWithTransfers
 import com.transnote.traffic.data.database.CityEntity
+import com.transnote.traffic.data.database.LineMarkerIds
 import com.transnote.traffic.data.database.MetroEntranceDetail
 import com.transnote.traffic.data.database.MetroEntranceEntity
 import com.transnote.traffic.data.database.MetroLineEntity
@@ -71,6 +72,17 @@ class TransNoteRepository(
     // ================= 站点标记（多选，列表可管理） =================
 
     fun observeMarkers(): Flow<List<StationMarkerEntity>> = db.stationMarkerDao().observeAll()
+
+    /** 各线路站点上出现的标记 id（用于首页线路卡片聚合展示标记） */
+    fun observeBusLineMarkerIds(): Flow<List<LineMarkerIds>> =
+        db.busStationDao().observeLineMarkerIds()
+
+    fun observeMetroLineMarkerIds(): Flow<List<LineMarkerIds>> =
+        db.metroStationDao().observeLineMarkerIds()
+
+    /** 站点标记名称（按标记列表顺序去重） */
+    private fun markerNamesOf(markerIds: List<Long>, ordered: List<StationMarkerEntity>): List<String> =
+        ordered.filter { it.id in markerIds }.map { it.name }.distinct()
 
     suspend fun getMarkers(): List<StationMarkerEntity> = db.stationMarkerDao().getAllOnce()
 
@@ -394,6 +406,15 @@ class TransNoteRepository(
         if (query.isBlank()) return emptyList()
         val results = mutableListOf<SearchResult>()
 
+        // 线路标记聚合：线路下所有站点标记的去重集合
+        val allMarkers = db.stationMarkerDao().getAllOnce()
+        val busLineMarkers = db.busStationDao().getAllOnce()
+            .groupBy { it.lineId }
+            .mapValues { (_, stations) -> markerNamesOf(stations.flatMap { it.markerIds }, allMarkers) }
+        val metroLineMarkers = db.metroStationDao().getAllOnce()
+            .groupBy { it.lineId }
+            .mapValues { (_, stations) -> markerNamesOf(stations.flatMap { it.markerIds }, allMarkers) }
+
         db.busLineDao().getAllOnce().forEach { line ->
             val score = SearchMatcher.weightedScore(query, line.lineName, SearchMatcher.Weight.NAME)
             if (score > SearchMatcher.NO_MATCH) {
@@ -406,6 +427,7 @@ class TransNoteRepository(
                         subtitle = buildBusLineSubtitle(line),
                         matchedField = "线路名称",
                         matchedText = line.lineName,
+                        markers = busLineMarkers[line.id].orEmpty(),
                         score = score
                     )
                 )
@@ -424,6 +446,7 @@ class TransNoteRepository(
                         subtitle = buildMetroLineSubtitle(line),
                         matchedField = "线路名称",
                         matchedText = line.lineName,
+                        markers = metroLineMarkers[line.id].orEmpty(),
                         score = score
                     )
                 )
@@ -441,9 +464,12 @@ class TransNoteRepository(
         if (query.isBlank()) return emptyList()
         val results = mutableListOf<SearchResult>()
 
+        val allMarkers = db.stationMarkerDao().getAllOnce()
         val busLineNames = db.busLineDao().getAllOnce().associate { it.id to it.lineName }
         val metroLineNames = db.metroLineDao().getAllOnce().associate { it.id to it.lineName }
-        val metroStationNames = db.metroStationDao().getAllOnce().associate { it.id to it.name }
+        val metroStations = db.metroStationDao().getAllOnce()
+        val metroStationNames = metroStations.associate { it.id to it.name }
+        val metroStationMarkers = metroStations.associate { it.id to it.markerIds }
 
         // 1) 公交站点：站点名 + 站点备注
         db.busStationDao().getAllOnce().forEach { station ->
@@ -468,6 +494,7 @@ class TransNoteRepository(
                         matchedField = field,
                         matchedText = text,
                         direction = station.direction,
+                        markers = markerNamesOf(station.markerIds, allMarkers),
                         score = score + if (station.isMetroTransfer) 3 else 0
                     )
                 )
@@ -490,6 +517,7 @@ class TransNoteRepository(
                         matchedField = if (nameScore >= noteScore) "站点名称" else "站点备注",
                         matchedText = if (nameScore >= noteScore) station.name
                         else SearchMatcher.snippet(station.note, query),
+                        markers = markerNamesOf(station.markerIds, allMarkers),
                         score = score + 5
                     )
                 )
@@ -522,6 +550,7 @@ class TransNoteRepository(
                     subtitle = "地铁出口 · ${entrance.road.ifBlank { "未填写道路" }}",
                     matchedField = best.first,
                     matchedText = SearchMatcher.snippet(best.second, query),
+                    markers = markerNamesOf(metroStationMarkers[entrance.metroStationId].orEmpty(), allMarkers),
                     score = best.third
                 )
             )

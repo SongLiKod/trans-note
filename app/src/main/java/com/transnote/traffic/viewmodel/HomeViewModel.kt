@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.transnote.traffic.data.database.BusLineEntity
 import com.transnote.traffic.data.database.CityEntity
 import com.transnote.traffic.data.database.MetroLineEntity
+import com.transnote.traffic.data.database.StationMarkerEntity
 import com.transnote.traffic.repository.TransNoteRepository
 import com.transnote.traffic.utils.ThemeManager
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -20,7 +21,7 @@ import kotlinx.coroutines.launch
 /** 首页线路分类 */
 enum class HomeTab { BUS, METRO }
 
-/** 首页状态（含城市切换、收藏 / 置顶 / 分组过滤） */
+/** 首页状态（含城市切换、收藏 / 置顶 / 分组过滤、线路标记聚合） */
 data class HomeUiState(
     val busLines: List<BusLineEntity> = emptyList(),
     val metroLines: List<MetroLineEntity> = emptyList(),
@@ -29,7 +30,10 @@ data class HomeUiState(
     val selectedCityName: String = "",
     val favoriteOnly: Boolean = false,
     val groupFilter: String = "",
-    val groups: List<String> = emptyList()
+    val groups: List<String> = emptyList(),
+    /** 线路 id → 该线路上出现的站点标记名称（去重） */
+    val busLineMarkers: Map<Long, List<String>> = emptyMap(),
+    val metroLineMarkers: Map<Long, List<String>> = emptyMap()
 )
 
 /**
@@ -67,8 +71,11 @@ class HomeViewModel(
 
         combine(
             repo.observeBusLinesByCity(cityId),
-            repo.observeMetroLinesByCity(cityId)
-        ) { bus, metro ->
+            repo.observeMetroLinesByCity(cityId),
+            repo.observeMarkers(),
+            repo.observeBusLineMarkerIds(),
+            repo.observeMetroLineMarkerIds()
+        ) { bus, metro, markers, busMarkerIds, metroMarkerIds ->
             val busFiltered = bus
                 .filter { !filters.favoriteOnly || it.isFavorite }
                 .filter { filters.groupFilter.isBlank() || it.groupName == filters.groupFilter }
@@ -85,10 +92,16 @@ class HomeViewModel(
                 favoriteOnly = filters.favoriteOnly,
                 groupFilter = filters.groupFilter,
                 groups = (bus.map { it.groupName } + metro.map { it.groupName })
-                    .filter { it.isNotBlank() }.distinct().sorted()
+                    .filter { it.isNotBlank() }.distinct().sorted(),
+                busLineMarkers = busMarkerIds.associate { it.lineId to markerNames(it.markerIds, markers) },
+                metroLineMarkers = metroMarkerIds.associate { it.lineId to markerNames(it.markerIds, markers) }
             )
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
+
+    /** 站点标记名称（按标记列表顺序去重） */
+    private fun markerNames(markerIds: List<Long>, markers: List<StationMarkerEntity>): List<String> =
+        markers.filter { it.id in markerIds }.map { it.name }.distinct()
 
     init {
         viewModelScope.launch { repo.ensureDefaultCity() }

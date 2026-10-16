@@ -51,7 +51,7 @@ import com.transnote.traffic.ui.components.DragReorderColumn
 import com.transnote.traffic.ui.components.LabeledTextField
 import com.transnote.traffic.ui.components.MapPoint
 import com.transnote.traffic.ui.components.MapSearchItem
-import com.transnote.traffic.ui.components.MarkerTag
+import com.transnote.traffic.ui.components.MarkerTagRow
 import com.transnote.traffic.ui.components.SectionTitle
 import com.transnote.traffic.ui.components.StationTimelineRow
 import com.transnote.traffic.ui.components.StationTrackMap
@@ -438,11 +438,7 @@ private fun MetroStationTimelineItem(
         // 站点标记（多选），显示在线路上
         if (markerNames.isNotEmpty()) {
             Spacer(Modifier.height(4.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                markerNames.forEach { name ->
-                    MarkerTag(name = name, accent = lineColor)
-                }
-            }
+            MarkerTagRow(names = markerNames, accent = lineColor)
         }
         Text(
             "出入口 ${wrapper.entrances.size} 个" +

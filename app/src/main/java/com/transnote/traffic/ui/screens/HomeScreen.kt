@@ -59,6 +59,7 @@ import com.transnote.traffic.data.database.CityEntity
 import com.transnote.traffic.data.database.MetroLineEntity
 import com.transnote.traffic.ui.components.ConfirmDialog
 import com.transnote.traffic.ui.components.EmptyState
+import com.transnote.traffic.ui.components.MarkerTagRow
 import com.transnote.traffic.ui.components.Tag
 import com.transnote.traffic.ui.components.TransNoteCard
 import com.transnote.traffic.ui.components.TransNoteTopBar
@@ -146,6 +147,7 @@ fun HomeScreen(
             when (tab) {
                 HomeTab.BUS -> BusLineList(
                     lines = state.busLines,
+                    lineMarkers = state.busLineMarkers,
                     onOpen = onOpenBusLine,
                     onEdit = { onCreateLine(LineType.BUS, it.id, it.cityId) },
                     onFavorite = viewModel::toggleBusFavorite,
@@ -156,6 +158,7 @@ fun HomeScreen(
 
                 HomeTab.METRO -> MetroLineList(
                     lines = state.metroLines,
+                    lineMarkers = state.metroLineMarkers,
                     onOpen = onOpenMetroLine,
                     onEdit = { onCreateLine(LineType.METRO, it.id, it.cityId) },
                     onFavorite = viewModel::toggleMetroFavorite,
@@ -456,6 +459,7 @@ private fun FilterRow(
 @Composable
 private fun BusLineList(
     lines: List<BusLineEntity>,
+    lineMarkers: Map<Long, List<String>> = emptyMap(),
     onOpen: (Long) -> Unit,
     onEdit: (BusLineEntity) -> Unit,
     onFavorite: (BusLineEntity) -> Unit,
@@ -496,6 +500,7 @@ private fun BusLineList(
                         if (isEmpty()) append("公交线路")
                     },
                     colorHex = line.colorHex,
+                    markers = lineMarkers[line.id].orEmpty(),
                     isFavorite = line.isFavorite,
                     isPinned = line.isPinned,
                     group = line.groupName,
@@ -515,6 +520,7 @@ private fun BusLineList(
 @Composable
 private fun MetroLineList(
     lines: List<MetroLineEntity>,
+    lineMarkers: Map<Long, List<String>> = emptyMap(),
     onOpen: (Long) -> Unit,
     onEdit: (MetroLineEntity) -> Unit,
     onFavorite: (MetroLineEntity) -> Unit,
@@ -554,6 +560,7 @@ private fun MetroLineList(
                         if (isEmpty()) append("地铁线路")
                     },
                     colorHex = line.colorHex,
+                    markers = lineMarkers[line.id].orEmpty(),
                     isFavorite = line.isFavorite,
                     isPinned = line.isPinned,
                     group = line.groupName,
@@ -575,6 +582,7 @@ private fun LineCard(
     title: String,
     subtitle: String,
     colorHex: String,
+    markers: List<String> = emptyList(),
     isFavorite: Boolean,
     isPinned: Boolean,
     group: String,
@@ -632,6 +640,10 @@ private fun LineCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (markers.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    MarkerTagRow(names = markers, accent = accent, max = 4)
+                }
             }
             Box {
                 IconButton(onClick = { menuExpanded = true }) {

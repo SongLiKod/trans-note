@@ -9,6 +9,12 @@ import androidx.room.Transaction
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
+/** 线路 → 站点标记 id 列表（用于首页线路卡片聚合展示标记） */
+data class LineMarkerIds(
+    val lineId: Long,
+    val markerIds: List<Long>
+)
+
 @Dao
 interface CityDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -109,6 +115,9 @@ interface BusStationDao {
 
     @Query("SELECT * FROM bus_station ORDER BY lineId ASC, direction ASC, orderIndex ASC, id ASC")
     suspend fun getAllOnce(): List<BusStationEntity>
+
+    @Query("SELECT lineId, markerIds FROM bus_station")
+    fun observeLineMarkerIds(): Flow<List<LineMarkerIds>>
 
     @Query("SELECT * FROM bus_station WHERE id = :id")
     suspend fun getById(id: Long): BusStationEntity?
@@ -232,6 +241,9 @@ interface MetroStationDao {
 
     @Query("SELECT * FROM metro_station ORDER BY lineId ASC, orderIndex ASC, id ASC")
     suspend fun getAllOnce(): List<MetroStationEntity>
+
+    @Query("SELECT lineId, markerIds FROM metro_station")
+    fun observeLineMarkerIds(): Flow<List<LineMarkerIds>>
 
     @Query("SELECT * FROM metro_station WHERE id = :id")
     suspend fun getById(id: Long): MetroStationEntity?

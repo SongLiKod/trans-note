@@ -28,6 +28,8 @@ data class SearchResult(
     val matchedText: String = "",
     /** 方向：0 上行 / 1 下行 / -1 不适用 */
     val direction: Int = -1,
+    /** 站点标记名称（多选）；线路结果为该线路站点上出现的标记聚合 */
+    val markers: List<String> = emptyList(),
     /** 匹配度得分（越高越靠前） */
     val score: Int = 0
 )

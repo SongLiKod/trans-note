@@ -34,6 +34,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.transnote.traffic.data.database.StationMarkerEntity
@@ -77,6 +78,31 @@ fun MarkerSelector(
                     }
                 }
             }
+        }
+    }
+}
+
+/** 一行标记标签（超出 [max] 个时以 +N 省略） */
+@Composable
+fun MarkerTagRow(
+    names: List<String>,
+    accent: Color,
+    modifier: Modifier = Modifier,
+    max: Int = Int.MAX_VALUE
+) {
+    if (names.isEmpty()) return
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        names.take(max).forEach { name -> MarkerTag(name = name, accent = accent) }
+        if (names.size > max) {
+            Text(
+                "+${names.size - max}",
+                style = MaterialTheme.typography.bodySmall,
+                color = TransNoteTheme.colors.hintText
+            )
         }
     }
 }
