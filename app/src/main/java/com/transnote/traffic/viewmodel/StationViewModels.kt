@@ -25,6 +25,9 @@ data class StationEditorState(
     val longitude: Double? = null,
     val imagePaths: List<String> = emptyList(),
     val isMetroTransfer: Boolean = false,
+    /** 所属线路（用于从站点跳转到对应线路查看） */
+    val lineId: Long = 0,
+    val lineName: String = "",
     val loading: Boolean = true,
     val saving: Boolean = false,
     val message: String? = null,
@@ -95,6 +98,8 @@ class BusStationViewModel(
             longitude = station.longitude,
             imagePaths = station.imagePaths,
             isMetroTransfer = station.isMetroTransfer,
+            lineId = station.lineId,
+            lineName = repo.getBusLine(station.lineId)?.lineName ?: "",
             loading = false
         )
         _selectedEntranceIds.value = repo.getTransferEntranceIds(stationId).toSet()
@@ -246,6 +251,8 @@ class MetroStationViewModel(
             latitude = station.latitude,
             longitude = station.longitude,
             imagePaths = station.imagePaths,
+            lineId = station.lineId,
+            lineName = repo.getMetroLine(station.lineId)?.lineName ?: "",
             loading = false
         )
     }

@@ -62,6 +62,7 @@ fun StationTrackMap(
             setTileSource(TileSourceFactory.MAPNIK)
             setMultiTouchControls(true)
             setUseDataConnection(true)
+            setTilesScaledToDpi(true)
             minZoomLevel = 3.0
             maxZoomLevel = 19.0
         }
@@ -76,8 +77,14 @@ fun StationTrackMap(
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
+        // observer 不会补发已经发生过的 ON_RESUME，需在页面已 RESUMED 时立即启动瓦片加载，
+        // 否则地图一直停留在灰色无瓦片状态。
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            mapView.onResume()
+        }
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            mapView.onPause()
             mapView.onDetach()
         }
     }
@@ -173,6 +180,8 @@ fun LocationPickerMap(
         MapView(context).apply {
             setTileSource(TileSourceFactory.MAPNIK)
             setMultiTouchControls(true)
+            setUseDataConnection(true)
+            setTilesScaledToDpi(true)
             controller.setZoom(15.0)
             controller.setCenter(initialPoint)
         }
@@ -187,8 +196,12 @@ fun LocationPickerMap(
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            mapView.onResume()
+        }
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            mapView.onPause()
             mapView.onDetach()
         }
     }

@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DirectionsSubway
 import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.Button
@@ -64,6 +65,7 @@ fun MetroStationDetailScreen(
     container: AppContainer,
     stationId: Long,
     onBack: () -> Unit,
+    onOpenLine: (Long) -> Unit,
     onOpenEntrance: (Long, Long) -> Unit
 ) {
     val viewModel: MetroStationViewModel = viewModel(
@@ -126,6 +128,38 @@ fun MetroStationDetailScreen(
                 value = editor.name,
                 onValueChange = viewModel::setName
             )
+            if (editor.lineId > 0L && editor.lineName.isNotBlank()) {
+                Spacer(Modifier.height(12.dp))
+                TransNoteCard(onClick = { onOpenLine(editor.lineId) }) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Filled.DirectionsSubway,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "所属线路",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TransNoteTheme.colors.hintText
+                            )
+                            Text(
+                                editor.lineName,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Text(
+                            "查看线路 ›",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
             Spacer(Modifier.height(12.dp))
             LabeledTextField(
                 label = "文字备注",

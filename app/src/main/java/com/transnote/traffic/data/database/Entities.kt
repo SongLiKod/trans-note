@@ -1,5 +1,6 @@
 package com.transnote.traffic.data.database
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -36,6 +37,11 @@ data class BusLineEntity(
     val firstBus: String = "",
     val lastBus: String = "",
     val fare: String = "",
+    /** 开往方向 / 时刻表（公交上行、下行各自独立） */
+    @ColumnInfo(defaultValue = "") val upDestination: String = "",
+    @ColumnInfo(defaultValue = "") val downDestination: String = "",
+    @ColumnInfo(defaultValue = "") val upTimetable: String = "",
+    @ColumnInfo(defaultValue = "") val downTimetable: String = "",
     // 三期：收藏 / 置顶 / 分组
     val isFavorite: Boolean = false,
     val isPinned: Boolean = false,
@@ -96,6 +102,9 @@ data class MetroLineEntity(
     val firstBus: String = "",
     val lastBus: String = "",
     val fare: String = "",
+    /** 开往方向 / 时刻表 */
+    @ColumnInfo(defaultValue = "") val destination: String = "",
+    @ColumnInfo(defaultValue = "") val timetable: String = "",
     val colorHex: String = "#2563EB",
     val isFavorite: Boolean = false,
     val isPinned: Boolean = false,

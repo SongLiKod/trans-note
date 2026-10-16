@@ -1,5 +1,6 @@
 package com.transnote.traffic.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
@@ -17,11 +18,13 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DirectionsBus
 import androidx.compose.material.icons.filled.DirectionsSubway
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.LocationCity
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
@@ -51,6 +54,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.transnote.traffic.AppContainer
 import com.transnote.traffic.data.database.BusLineEntity
+import com.transnote.traffic.data.database.CityEntity
 import com.transnote.traffic.data.database.MetroLineEntity
 import com.transnote.traffic.ui.components.ConfirmDialog
 import com.transnote.traffic.ui.components.EmptyState
@@ -73,16 +77,17 @@ fun HomeScreen(
     onOpenSearch: () -> Unit,
     onOpenBusLine: (Long) -> Unit,
     onOpenMetroLine: (Long) -> Unit,
-    onCreateLine: (LineType, Long) -> Unit
+    onCreateLine: (LineType, Long, Long) -> Unit
 ) {
     val viewModel: HomeViewModel = viewModel(
-        factory = containerViewModelFactory { HomeViewModel(it.repository) }
+        factory = containerViewModelFactory { HomeViewModel(it.repository, it.themeManager) }
     )
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var tab by remember { mutableStateOf(HomeTab.BUS) }
     var pendingDelete by remember { mutableStateOf<Any?>(null) }
     var groupTarget by remember { mutableStateOf<Any?>(null) }
     var showNewLineDialog by remember { mutableStateOf(false) }
+    var showCityDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -107,6 +112,10 @@ fun HomeScreen(
         }
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            CityBar(
+                cityName = state.selectedCityName.ifBlank { "默认城市" },
+                onClick = { showCityDialog = true }
+            )
             TabRow(
                 selectedTabIndex = tab.ordinal,
                 containerColor = TransNoteTheme.colors.navBar,
@@ -136,7 +145,7 @@ fun HomeScreen(
                 HomeTab.BUS -> BusLineList(
                     lines = state.busLines,
                     onOpen = onOpenBusLine,
-                    onEdit = { onCreateLine(LineType.BUS, it.id) },
+                    onEdit = { onCreateLine(LineType.BUS, it.id, it.cityId) },
                     onFavorite = viewModel::toggleBusFavorite,
                     onPin = viewModel::toggleBusPinned,
                     onGroup = { groupTarget = it },
@@ -146,7 +155,7 @@ fun HomeScreen(
                 HomeTab.METRO -> MetroLineList(
                     lines = state.metroLines,
                     onOpen = onOpenMetroLine,
-                    onEdit = { onCreateLine(LineType.METRO, it.id) },
+                    onEdit = { onCreateLine(LineType.METRO, it.id, it.cityId) },
                     onFavorite = viewModel::toggleMetroFavorite,
                     onPin = viewModel::toggleMetroPinned,
                     onGroup = { groupTarget = it },
@@ -167,14 +176,14 @@ fun HomeScreen(
                     Text("新增线路", style = MaterialTheme.typography.titleLarge)
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "请选择要录入的线路类型",
+                        "城市：${state.selectedCityName.ifBlank { "默认城市" }}｜请选择要录入的线路类型",
                         style = MaterialTheme.typography.bodySmall,
                         color = TransNoteTheme.colors.hintText
                     )
                     Spacer(Modifier.height(12.dp))
                     TransNoteCard(onClick = {
                         showNewLineDialog = false
-                        onCreateLine(LineType.BUS, 0L)
+                        onCreateLine(LineType.BUS, 0L, state.selectedCityId)
                     }) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
@@ -189,7 +198,7 @@ fun HomeScreen(
                     Spacer(Modifier.height(8.dp))
                     TransNoteCard(onClick = {
                         showNewLineDialog = false
-                        onCreateLine(LineType.METRO, 0L)
+                        onCreateLine(LineType.METRO, 0L, state.selectedCityId)
                     }) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
@@ -239,6 +248,166 @@ fun HomeScreen(
             current = line.groupName,
             onConfirm = { viewModel.setMetroGroup(line, it); groupTarget = null },
             onDismiss = { groupTarget = null }
+        )
+    }
+
+    if (showCityDialog) {
+        CityDialog(
+            cities = state.cities,
+            selectedId = state.selectedCityId,
+            onSelect = { viewModel.selectCity(it); showCityDialog = false },
+            onAdd = viewModel::addCity,
+            onDelete = { viewModel.deleteCity(it.cityId) },
+            onDismiss = { showCityDialog = false }
+        )
+    }
+}
+
+@Composable
+private fun CityBar(cityName: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Filled.LocationCity,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            "当前城市",
+            style = MaterialTheme.typography.bodySmall,
+            color = TransNoteTheme.colors.hintText
+        )
+        Spacer(Modifier.width(8.dp))
+        androidx.compose.material3.Surface(
+            color = TransNoteTheme.colors.transferTagBg,
+            shape = MaterialTheme.shapes.small,
+            modifier = Modifier.clickable(onClick = onClick)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    cityName,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    Icons.Filled.ArrowDropDown,
+                    contentDescription = "切换城市",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CityDialog(
+    cities: List<CityEntity>,
+    selectedId: Long,
+    onSelect: (Long) -> Unit,
+    onAdd: (String) -> Unit,
+    onDelete: (CityEntity) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var newName by remember { mutableStateOf("") }
+    var pendingDelete by remember { mutableStateOf<CityEntity?>(null) }
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        androidx.compose.material3.Surface(
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("选择城市", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "不同城市的线路相互独立，切换即可查看该城市内容",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TransNoteTheme.colors.hintText
+                )
+                Spacer(Modifier.height(8.dp))
+
+                cities.forEach { city ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(city.cityId) }
+                            .padding(vertical = 4.dp)
+                    ) {
+                        androidx.compose.material3.RadioButton(
+                            selected = city.cityId == selectedId,
+                            onClick = { onSelect(city.cityId) }
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            city.cityName,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (cities.size > 1) {
+                            IconButton(onClick = { pendingDelete = city }) {
+                                Icon(
+                                    Icons.Filled.Delete,
+                                    contentDescription = "删除城市",
+                                    tint = TransNoteTheme.colors.danger
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+                com.transnote.traffic.ui.components.ThemedDivider()
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    com.transnote.traffic.ui.components.LabeledTextField(
+                        label = "新增城市",
+                        value = newName,
+                        onValueChange = { newName = it },
+                        placeholder = "如：上海",
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    IconButton(onClick = {
+                        if (newName.isNotBlank()) {
+                            onAdd(newName)
+                            newName = ""
+                        }
+                    }) {
+                        Icon(
+                            Icons.Filled.Add,
+                            contentDescription = "添加城市",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    androidx.compose.material3.TextButton(onClick = onDismiss) {
+                        Text("完成", color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+        }
+    }
+
+    pendingDelete?.let { city ->
+        ConfirmDialog(
+            title = "删除城市",
+            text = "将删除「${city.cityName}」及其全部线路、站点、出入口与图片，且不可恢复。",
+            confirmText = "删除",
+            danger = true,
+            onConfirm = { onDelete(city) },
+            onDismiss = { pendingDelete = null }
         )
     }
 }
@@ -317,6 +486,11 @@ private fun BusLineList(
                             if (isNotEmpty()) append(" · ")
                             append("票价 ${line.fare}")
                         }
+                        val dest = line.upDestination.ifBlank { line.downDestination }
+                        if (dest.isNotBlank()) {
+                            if (isNotEmpty()) append(" · ")
+                            append("开往 $dest")
+                        }
                         if (isEmpty()) append("公交线路")
                     },
                     isFavorite = line.isFavorite,
@@ -369,6 +543,10 @@ private fun MetroLineList(
                         if (line.fare.isNotBlank()) {
                             if (isNotEmpty()) append(" · ")
                             append("票价 ${line.fare}")
+                        }
+                        if (line.destination.isNotBlank()) {
+                            if (isNotEmpty()) append(" · ")
+                            append("开往 ${line.destination}")
                         }
                         if (isEmpty()) append("地铁线路")
                     },

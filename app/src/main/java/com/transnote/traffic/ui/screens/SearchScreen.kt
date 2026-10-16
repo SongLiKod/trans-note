@@ -26,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -125,8 +126,14 @@ fun SearchScreen(
                 ) {
                     items(results) { result ->
                         Box(Modifier.animateItem()) {
+                            val openLine: (() -> Unit)? = when (result.type) {
+                                SearchResultType.BUS_STATION -> ({ onOpenBusLine(result.lineId) })
+                                SearchResultType.METRO_STATION -> ({ onOpenMetroLine(result.lineId) })
+                                else -> null
+                            }
                             SearchResultCard(
                                 result = result,
+                                onOpenLine = openLine,
                                 onClick = {
                                     when (result.type) {
                                         SearchResultType.BUS_LINE -> onOpenBusLine(result.id)
@@ -147,7 +154,11 @@ fun SearchScreen(
 }
 
 @Composable
-private fun SearchResultCard(result: SearchResult, onClick: () -> Unit) {
+private fun SearchResultCard(
+    result: SearchResult,
+    onClick: () -> Unit,
+    onOpenLine: (() -> Unit)? = null
+) {
     val icon = when (result.type) {
         SearchResultType.BUS_LINE, SearchResultType.BUS_STATION -> Icons.Filled.DirectionsBus
         SearchResultType.METRO_LINE, SearchResultType.METRO_STATION -> Icons.Filled.DirectionsSubway
@@ -196,6 +207,9 @@ private fun SearchResultCard(result: SearchResult, onClick: () -> Unit) {
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+            }
+            if (onOpenLine != null) {
+                TextButton(onClick = onOpenLine) { Text("线路") }
             }
         }
     }

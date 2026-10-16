@@ -403,3 +403,43 @@ fun StrongText(text: String, modifier: Modifier = Modifier) {
         modifier = modifier
     )
 }
+
+/**
+ * 时刻表内容：把发车时间拆分为时间胶囊展示；若为整段文字则原样展示。
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun TimetableContent(text: String, modifier: Modifier = Modifier) {
+    val tokens = text.split(Regex("[\\s,，、;；\\n]+"))
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+
+    if (tokens.size <= 1) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = modifier.fillMaxWidth()
+        )
+    } else {
+        androidx.compose.foundation.layout.FlowRow(
+            modifier = modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            tokens.forEach { token ->
+                Surface(
+                    color = TransNoteTheme.colors.transferTagBg,
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(
+                        token,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+        }
+    }
+}

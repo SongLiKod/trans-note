@@ -6,60 +6,97 @@ import com.transnote.traffic.data.database.BusLineEntity
 import com.transnote.traffic.data.database.CityEntity
 import com.transnote.traffic.data.database.MetroLineEntity
 import com.transnote.traffic.repository.TransNoteRepository
+import com.transnote.traffic.utils.ThemeManager
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /** 首页线路分类 */
 enum class HomeTab { BUS, METRO }
 
-/** 分组管理（三期：线路分组） */
+/** 首页状态（含城市切换、收藏 / 置顶 / 分组过滤） */
 data class HomeUiState(
     val busLines: List<BusLineEntity> = emptyList(),
     val metroLines: List<MetroLineEntity> = emptyList(),
     val cities: List<CityEntity> = emptyList(),
+    val selectedCityId: Long = 0L,
+    val selectedCityName: String = "",
     val favoriteOnly: Boolean = false,
     val groupFilter: String = "",
     val groups: List<String> = emptyList()
 )
 
 /**
- * 首页 ViewModel：公交 / 地铁线路列表、收藏、置顶、分组。
+ * 首页 ViewModel：城市切换 + 公交 / 地铁线路列表、收藏、置顶、分组。
  */
-class HomeViewModel(private val repo: TransNoteRepository) : ViewModel() {
+@OptIn(ExperimentalCoroutinesApi::class)
+class HomeViewModel(
+    private val repo: TransNoteRepository,
+    private val settings: ThemeManager
+) : ViewModel() {
 
     private val favoriteOnly = MutableStateFlow(false)
     private val groupFilter = MutableStateFlow("")
 
+    /** 用户主动选择的城市（0 = 尚未选择，回退到第一个城市） */
+    private val cityOverride = MutableStateFlow(0L)
+
+    private data class Filters(
+        val cities: List<CityEntity>,
+        val cityOverride: Long,
+        val favoriteOnly: Boolean,
+        val groupFilter: String
+    )
+
     val uiState: StateFlow<HomeUiState> = combine(
-        repo.observeBusLines(),
-        repo.observeMetroLines(),
         repo.observeCities(),
-        combine(favoriteOnly, groupFilter) { fav, group -> fav to group }
-    ) { bus, metro, cities, filter ->
-        val (fav, group) = filter
-        val busFiltered = bus
-            .filter { !fav || it.isFavorite }
-            .filter { group.isBlank() || it.groupName == group }
-        val metroFiltered = metro
-            .filter { !fav || it.isFavorite }
-            .filter { group.isBlank() || it.groupName == group }
-        HomeUiState(
-            busLines = busFiltered,
-            metroLines = metroFiltered,
-            cities = cities,
-            favoriteOnly = fav,
-            groupFilter = group,
-            groups = (bus.map { it.groupName } + metro.map { it.groupName })
-                .filter { it.isNotBlank() }.distinct().sorted()
-        )
+        cityOverride,
+        favoriteOnly,
+        groupFilter
+    ) { cities, override, fav, group ->
+        Filters(cities, override, fav, group)
+    }.flatMapLatest { filters ->
+        val cityId = if (filters.cities.any { it.cityId == filters.cityOverride }) filters.cityOverride
+        else filters.cities.firstOrNull()?.cityId ?: 0L
+
+        combine(
+            repo.observeBusLinesByCity(cityId),
+            repo.observeMetroLinesByCity(cityId)
+        ) { bus, metro ->
+            val busFiltered = bus
+                .filter { !filters.favoriteOnly || it.isFavorite }
+                .filter { filters.groupFilter.isBlank() || it.groupName == filters.groupFilter }
+            val metroFiltered = metro
+                .filter { !filters.favoriteOnly || it.isFavorite }
+                .filter { filters.groupFilter.isBlank() || it.groupName == filters.groupFilter }
+            HomeUiState(
+                busLines = busFiltered,
+                metroLines = metroFiltered,
+                cities = filters.cities,
+                selectedCityId = cityId,
+                selectedCityName = filters.cities.firstOrNull { it.cityId == cityId }?.cityName
+                    ?: "默认城市",
+                favoriteOnly = filters.favoriteOnly,
+                groupFilter = filters.groupFilter,
+                groups = (bus.map { it.groupName } + metro.map { it.groupName })
+                    .filter { it.isNotBlank() }.distinct().sorted()
+            )
+        }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 
     init {
         viewModelScope.launch { repo.ensureDefaultCity() }
+        // 恢复上次选中的城市
+        viewModelScope.launch {
+            val saved = settings.selectedCityId.first()
+            if (saved > 0L) cityOverride.value = saved
+        }
     }
 
     fun setFavoriteOnly(value: Boolean) {
@@ -70,9 +107,32 @@ class HomeViewModel(private val repo: TransNoteRepository) : ViewModel() {
         groupFilter.value = value
     }
 
+    /** 切换当前城市 */
+    fun selectCity(cityId: Long) {
+        cityOverride.value = cityId
+        viewModelScope.launch { settings.setSelectedCityId(cityId) }
+    }
+
+    /** 新增城市并自动切换过去 */
     fun addCity(name: String) {
-        if (name.isBlank()) return
-        viewModelScope.launch { repo.addCity(name.trim()) }
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            val id = repo.addCity(trimmed)
+            cityOverride.value = id
+            settings.setSelectedCityId(id)
+        }
+    }
+
+    /** 删除城市（同时删除该城市的全部线路） */
+    fun deleteCity(cityId: Long) {
+        viewModelScope.launch {
+            repo.deleteCity(cityId)
+            if (cityOverride.value == cityId) {
+                cityOverride.value = 0L
+                settings.setSelectedCityId(0L)
+            }
+        }
     }
 
     fun deleteBusLine(line: BusLineEntity) {

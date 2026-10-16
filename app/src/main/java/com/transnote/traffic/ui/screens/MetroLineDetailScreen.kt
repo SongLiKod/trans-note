@@ -1,7 +1,7 @@
 package com.transnote.traffic.ui.screens
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -12,14 +12,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Login
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -38,13 +43,16 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.transnote.traffic.AppContainer
+import com.transnote.traffic.data.database.MetroStationWithEntrances
 import com.transnote.traffic.ui.components.ConfirmDialog
 import com.transnote.traffic.ui.components.DragReorderColumn
 import com.transnote.traffic.ui.components.LabeledTextField
 import com.transnote.traffic.ui.components.MapPoint
 import com.transnote.traffic.ui.components.SectionTitle
+import com.transnote.traffic.ui.components.StationTimelineRow
 import com.transnote.traffic.ui.components.StationTrackMap
 import com.transnote.traffic.ui.components.Tag
+import com.transnote.traffic.ui.components.TimetableContent
 import com.transnote.traffic.ui.components.TransNoteCard
 import com.transnote.traffic.ui.components.TransNoteTopBar
 import com.transnote.traffic.ui.theme.TransNoteTheme
@@ -53,7 +61,8 @@ import com.transnote.traffic.viewmodel.MetroLineDetailViewModel
 import com.transnote.traffic.viewmodel.containerViewModelFactory
 
 /**
- * 地铁线路详情页（PRD 3.3）：站点列表、出入口数量、地图轨迹、站点增删与排序。
+ * 地铁线路详情页（PRD 3.3）：以线路图（竖线 + 站点圆点）展示站点与出入口数量，
+ * 地图绘制轨迹；点击「编辑」后才可增删站点、拖拽排序。
  */
 @Composable
 fun MetroLineDetailScreen(
@@ -67,7 +76,10 @@ fun MetroLineDetailScreen(
         factory = containerViewModelFactory { MetroLineDetailViewModel(it.repository, lineId) }
     )
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var editMode by remember { mutableStateOf(false) }
+    var menuExpanded by remember { mutableStateOf(false) }
     var newStationName by remember { mutableStateOf("") }
+    var showBatchAdd by remember { mutableStateOf(false) }
     var confirmDeleteLine by remember { mutableStateOf(false) }
     var pendingDeleteStation by remember { mutableStateOf<Pair<Long, String>?>(null) }
 
@@ -77,15 +89,52 @@ fun MetroLineDetailScreen(
                 title = state.line?.lineName ?: "地铁线路",
                 onBack = onBack,
                 actions = {
-                    IconButton(onClick = onEditLine) {
-                        Icon(Icons.Filled.Edit, contentDescription = "编辑线路")
-                    }
-                    IconButton(onClick = { confirmDeleteLine = true }) {
+                    IconButton(onClick = viewModel::toggleFavorite) {
                         Icon(
-                            Icons.Filled.Delete,
-                            contentDescription = "删除线路",
-                            tint = TransNoteTheme.colors.danger
+                            Icons.Filled.Star,
+                            contentDescription = "收藏",
+                            tint = if (state.line?.isFavorite == true) TransNoteTheme.colors.warning
+                            else MaterialTheme.colorScheme.onSurface
                         )
+                    }
+                    IconButton(onClick = viewModel::togglePinned) {
+                        Icon(
+                            Icons.Filled.PushPin,
+                            contentDescription = "置顶",
+                            tint = if (state.line?.isPinned == true) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    IconButton(onClick = { editMode = !editMode }) {
+                        Icon(
+                            if (editMode) Icons.Filled.Check else Icons.Filled.Edit,
+                            contentDescription = if (editMode) "完成" else "编辑站点",
+                            tint = if (editMode) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "更多")
+                        }
+                        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                            DropdownMenuItem(
+                                text = { Text("编辑线路信息") },
+                                leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                                onClick = { menuExpanded = false; onEditLine() }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("删除线路", color = TransNoteTheme.colors.danger) },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Filled.Delete,
+                                        contentDescription = null,
+                                        tint = TransNoteTheme.colors.danger
+                                    )
+                                },
+                                onClick = { menuExpanded = false; confirmDeleteLine = true }
+                            )
+                        }
                     }
                 }
             )
@@ -98,14 +147,41 @@ fun MetroLineDetailScreen(
         ) {
             item {
                 TransNoteCard {
-                    Text(
-                        state.line?.let { line ->
-                            val fare = if (line.fare.isNotBlank()) " · 票价 ${line.fare}" else ""
-                            "首末班 ${line.firstBus.ifBlank { "--" }}~" +
-                                "${line.lastBus.ifBlank { "--" }}$fare"
-                        } ?: "—",
-                        style = MaterialTheme.typography.bodyLarge
-                    )
+                    Column {
+                        Text(
+                            state.line?.let { line ->
+                                val fare = if (line.fare.isNotBlank()) " · 票价 ${line.fare}" else ""
+                                "首末班 ${line.firstBus.ifBlank { "--" }}~" +
+                                    "${line.lastBus.ifBlank { "--" }}$fare"
+                            } ?: "—",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        val destination = state.line?.destination.orEmpty()
+                        if (destination.isNotBlank()) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "开往 $destination",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                val timetable = state.line?.timetable.orEmpty()
+                SectionTitle("时刻表")
+                TransNoteCard {
+                    if (timetable.isBlank()) {
+                        Text(
+                            "未填写时刻表，点右上角「⋮ → 编辑线路信息」补充",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TransNoteTheme.colors.hintText
+                        )
+                    } else {
+                        TimetableContent(timetable)
+                    }
                 }
             }
 
@@ -123,84 +199,77 @@ fun MetroLineDetailScreen(
                 )
             }
 
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    LabeledTextField(
-                        label = "新增地铁站点",
-                        value = newStationName,
-                        onValueChange = { newStationName = it },
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    IconButton(onClick = {
-                        viewModel.addStation(newStationName)
-                        newStationName = ""
-                    }) {
-                        Icon(
-                            Icons.Filled.Add,
-                            contentDescription = "添加站点",
-                            tint = MaterialTheme.colorScheme.primary
+            if (editMode) {
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        LabeledTextField(
+                            label = "新增地铁站点",
+                            value = newStationName,
+                            onValueChange = { newStationName = it },
+                            modifier = Modifier.weight(1f)
                         )
+                        Spacer(Modifier.width(8.dp))
+                        IconButton(onClick = {
+                            viewModel.addStation(newStationName)
+                            newStationName = ""
+                        }) {
+                            Icon(
+                                Icons.Filled.Add,
+                                contentDescription = "添加站点",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+                item {
+                    TextButton(onClick = { showBatchAdd = true }) {
+                        Text("批量添加站点")
                     }
                 }
             }
 
-            item { SectionTitle("地铁站点（${state.stations.size}）· 长按可拖拽排序") }
+            item {
+                SectionTitle("地铁站点（${state.stations.size}）")
+                Text(
+                    if (editMode) "编辑中：点击站点可修改出入口，长按可拖拽排序"
+                    else "只读展示；点右上角「编辑」后可增删、拖拽或修改站点",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TransNoteTheme.colors.hintText
+                )
+            }
 
             item {
-                DragReorderColumn(items = state.stations, onMove = viewModel::reorder) { index, wrapper, _ ->
-                    val station = wrapper.station
-                    TransNoteCard(
-                        modifier = Modifier.padding(vertical = 4.dp),
-                        onClick = { onOpenStation(station.id) }
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Filled.DragHandle,
-                                contentDescription = "拖拽排序",
-                                tint = TransNoteTheme.colors.hintText
+                if (state.stations.isEmpty()) {
+                    Text(
+                        if (editMode) "暂无站点，请在上方添加" else "暂无站点，点右上角「编辑」后可添加站点",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TransNoteTheme.colors.hintText,
+                        modifier = Modifier.padding(vertical = 12.dp)
+                    )
+                } else if (editMode) {
+                    DragReorderColumn(items = state.stations, onMove = viewModel::reorder) { index, wrapper, isDragging ->
+                        MetroStationTimelineItem(
+                            index = index,
+                            total = state.stations.size,
+                            wrapper = wrapper,
+                            editMode = true,
+                            isDragging = isDragging,
+                            onClick = { onOpenStation(wrapper.station.id) },
+                            onDelete = { pendingDeleteStation = wrapper.station.id to wrapper.station.name }
+                        )
+                    }
+                } else {
+                    Column {
+                        state.stations.forEachIndexed { index, wrapper ->
+                            MetroStationTimelineItem(
+                                index = index,
+                                total = state.stations.size,
+                                wrapper = wrapper,
+                                editMode = false,
+                                isDragging = false,
+                                onClick = { onOpenStation(wrapper.station.id) },
+                                onDelete = {}
                             )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                "${index + 1}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = TransNoteTheme.colors.hintText,
-                                modifier = Modifier.width(28.dp)
-                            )
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    station.name,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    "出入口 ${wrapper.entrances.size} 个" +
-                                        if (wrapper.entrances.isNotEmpty()) {
-                                            "：" + wrapper.entrances.joinToString("、") { it.name }
-                                        } else "",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = TransNoteTheme.colors.hintText,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            if (wrapper.entrances.isNotEmpty()) {
-                                Tag(
-                                    "可换乘",
-                                    TransNoteTheme.colors.transferTagBg,
-                                    MaterialTheme.colorScheme.primary,
-                                    icon = Icons.Filled.Login
-                                )
-                            }
-                            IconButton(onClick = { pendingDeleteStation = station.id to station.name }) {
-                                Icon(
-                                    Icons.Filled.Delete,
-                                    contentDescription = "删除站点",
-                                    tint = TransNoteTheme.colors.danger
-                                )
-                            }
                         }
                     }
                 }
@@ -208,6 +277,47 @@ fun MetroLineDetailScreen(
 
             item { Spacer(Modifier.height(24.dp)) }
         }
+    }
+
+    if (showBatchAdd) {
+        var batchText by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showBatchAdd = false },
+            shape = MaterialTheme.shapes.large,
+            title = { Text("批量添加地铁站点") },
+            text = {
+                Column {
+                    Text(
+                        "每行一个站点，或用 、 → 逗号分隔",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TransNoteTheme.colors.hintText
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    LabeledTextField(
+                        label = "站点列表",
+                        value = batchText,
+                        onValueChange = { batchText = it },
+                        singleLine = false,
+                        minLines = 4,
+                        placeholder = "火车站\n人民广场\n市图书馆"
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    batchText.split(Regex("[\\n、,，→>]+"))
+                        .map { it.trim() }
+                        .filter { it.isNotEmpty() }
+                        .forEach { viewModel.addStation(it) }
+                    showBatchAdd = false
+                }) { Text("添加") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchAdd = false }) {
+                    Text("取消", color = TransNoteTheme.colors.hintText)
+                }
+            }
+        )
     }
 
     if (confirmDeleteLine) {
@@ -229,6 +339,73 @@ fun MetroLineDetailScreen(
             danger = true,
             onConfirm = { viewModel.deleteStation(id) },
             onDismiss = { pendingDeleteStation = null }
+        )
+    }
+}
+
+/** 地铁站点行（线路图圆点样式）。 */
+@Composable
+private fun MetroStationTimelineItem(
+    index: Int,
+    total: Int,
+    wrapper: MetroStationWithEntrances,
+    editMode: Boolean,
+    isDragging: Boolean,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val station = wrapper.station
+    StationTimelineRow(
+        index = index,
+        total = total,
+        isTransfer = wrapper.entrances.isNotEmpty(),
+        isDragging = isDragging,
+        onClick = if (editMode) onClick else null,
+        trailing = {
+            if (editMode) {
+                Icon(
+                    Icons.Filled.DragHandle,
+                    contentDescription = "拖拽排序",
+                    tint = TransNoteTheme.colors.hintText
+                )
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        Icons.Filled.Delete,
+                        contentDescription = "删除站点",
+                        tint = TransNoteTheme.colors.danger
+                    )
+                }
+            }
+        }
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                station.name,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+            if (wrapper.entrances.isNotEmpty()) {
+                Spacer(Modifier.width(8.dp))
+                Tag(
+                    "可换乘",
+                    TransNoteTheme.colors.transferTagBg,
+                    MaterialTheme.colorScheme.primary,
+                    icon = Icons.Filled.Login
+                )
+            }
+        }
+        Text(
+            "出入口 ${wrapper.entrances.size} 个" +
+                if (wrapper.entrances.isNotEmpty()) {
+                    "：" + wrapper.entrances.joinToString("、") { it.name }
+                } else "",
+            style = MaterialTheme.typography.bodySmall,
+            color = TransNoteTheme.colors.hintText,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }

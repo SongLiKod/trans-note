@@ -39,6 +39,9 @@ class TransNoteRepository(
 
     suspend fun addCity(name: String): Long = db.cityDao().insert(CityEntity(cityName = name))
 
+    /** 删除城市（外键 CASCADE 会一并删除该城市的线路与站点） */
+    suspend fun deleteCity(id: Long) = db.cityDao().deleteById(id)
+
     /** 确保存在默认城市，返回其 id */
     suspend fun ensureDefaultCity(): Long {
         val cities = db.cityDao().getAllOnce()
@@ -48,6 +51,10 @@ class TransNoteRepository(
     // ================= 公交线路 =================
 
     fun observeBusLines(): Flow<List<BusLineEntity>> = db.busLineDao().observeAll()
+
+    /** 按城市筛选公交线路（首页城市切换） */
+    fun observeBusLinesByCity(cityId: Long): Flow<List<BusLineEntity>> =
+        db.busLineDao().observeByCity(cityId)
 
     fun observeBusLine(id: Long): Flow<BusLineEntity?> = db.busLineDao().observeById(id)
 
@@ -144,6 +151,10 @@ class TransNoteRepository(
     // ================= 地铁线路 =================
 
     fun observeMetroLines(): Flow<List<MetroLineEntity>> = db.metroLineDao().observeAll()
+
+    /** 按城市筛选地铁线路（首页城市切换） */
+    fun observeMetroLinesByCity(cityId: Long): Flow<List<MetroLineEntity>> =
+        db.metroLineDao().observeByCity(cityId)
 
     suspend fun getMetroLines(): List<MetroLineEntity> = db.metroLineDao().getAllOnce()
 
@@ -438,6 +449,8 @@ class TransNoteRepository(
             parts.add("首末班 ${line.firstBus.ifBlank { "--" }}~${line.lastBus.ifBlank { "--" }}")
         }
         if (line.fare.isNotBlank()) parts.add("票价 ${line.fare}")
+        val dest = line.upDestination.ifBlank { line.downDestination }
+        if (dest.isNotBlank()) parts.add("开往 $dest")
         return parts.joinToString(" · ").ifBlank { "公交线路" }
     }
 
@@ -447,6 +460,7 @@ class TransNoteRepository(
             parts.add("首末班 ${line.firstBus.ifBlank { "--" }}~${line.lastBus.ifBlank { "--" }}")
         }
         if (line.fare.isNotBlank()) parts.add("票价 ${line.fare}")
+        if (line.destination.isNotBlank()) parts.add("开往 ${line.destination}")
         return parts.joinToString(" · ").ifBlank { "地铁线路" }
     }
 }

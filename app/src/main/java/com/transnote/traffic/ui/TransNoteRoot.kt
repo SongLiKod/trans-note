@@ -141,9 +141,9 @@ fun TransNoteRoot(
                     onOpenSearch = { navController.navigate(Routes.SEARCH) },
                     onOpenBusLine = { navController.navigate(Routes.busLine(it)) },
                     onOpenMetroLine = { navController.navigate(Routes.metroLine(it)) },
-                    onCreateLine = { type, id ->
+                    onCreateLine = { type, id, cityId ->
                         val typeKey = if (type == LineType.METRO) "METRO" else "BUS"
-                        navController.navigate(Routes.editLine(typeKey, id))
+                        navController.navigate(Routes.editLine(typeKey, id, cityId))
                     }
                 )
             }
@@ -176,12 +176,17 @@ fun TransNoteRoot(
                     navArgument("id") {
                         type = NavType.LongType
                         defaultValue = 0L
+                    },
+                    navArgument("cityId") {
+                        type = NavType.LongType
+                        defaultValue = 0L
                     }
                 )
             ) { entry ->
                 val type = if (entry.arguments?.getString("type") == "METRO") LineType.METRO
                 else LineType.BUS
                 val id = entry.arguments?.getLong("id") ?: 0L
+                val cityId = entry.arguments?.getLong("cityId") ?: 0L
                 val ocrLines by entry.savedStateHandle
                     .getStateFlow<ArrayList<String>?>("ocr_result", null)
                     .collectAsStateWithLifecycle()
@@ -189,6 +194,7 @@ fun TransNoteRoot(
                     container = container,
                     lineType = type,
                     lineId = id,
+                    cityId = cityId,
                     ocrLines = ocrLines,
                     onConsumeOcr = { entry.savedStateHandle["ocr_result"] = null },
                     onOpenOcr = { navController.navigate(Routes.OCR) },
@@ -248,6 +254,7 @@ fun TransNoteRoot(
                     container = container,
                     stationId = id,
                     onBack = { navController.popBackStack() },
+                    onOpenLine = { navController.navigate(Routes.busLine(it)) },
                     onOpenEntrance = { stationId, entranceId ->
                         navController.navigate(Routes.entrance(stationId, entranceId))
                     }
@@ -263,6 +270,7 @@ fun TransNoteRoot(
                     container = container,
                     stationId = id,
                     onBack = { navController.popBackStack() },
+                    onOpenLine = { navController.navigate(Routes.metroLine(it)) },
                     onOpenEntrance = { stationId, entranceId ->
                         navController.navigate(Routes.entrance(stationId, entranceId))
                     }

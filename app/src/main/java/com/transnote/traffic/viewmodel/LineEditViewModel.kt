@@ -26,6 +26,14 @@ data class LineEditUiState(
     val firstBus: String = "",
     val lastBus: String = "",
     val fare: String = "",
+    /** 公交上/下行开往方向与时刻表 */
+    val upDestination: String = "",
+    val downDestination: String = "",
+    val upTimetable: String = "",
+    val downTimetable: String = "",
+    /** 地铁开往方向与时刻表 */
+    val destination: String = "",
+    val timetable: String = "",
     val colorHex: String = "#2563EB",
     val upStations: List<StationDraft> = emptyList(),
     val downStations: List<StationDraft> = emptyList(),
@@ -44,7 +52,8 @@ data class LineEditUiState(
 class LineEditViewModel(
     private val repo: TransNoteRepository,
     private val lineType: LineType,
-    private val lineId: Long
+    private val lineId: Long,
+    private val cityId: Long = 0L
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(LineEditUiState(lineType = lineType))
@@ -75,6 +84,10 @@ class LineEditViewModel(
                             firstBus = line.firstBus,
                             lastBus = line.lastBus,
                             fare = line.fare,
+                            upDestination = line.upDestination,
+                            downDestination = line.downDestination,
+                            upTimetable = line.upTimetable,
+                            downTimetable = line.downTimetable,
                             upStations = up,
                             downStations = down,
                             loading = false
@@ -94,6 +107,8 @@ class LineEditViewModel(
                             firstBus = line.firstBus,
                             lastBus = line.lastBus,
                             fare = line.fare,
+                            destination = line.destination,
+                            timetable = line.timetable,
                             colorHex = line.colorHex,
                             metroStations = stations,
                             loading = false
@@ -110,6 +125,12 @@ class LineEditViewModel(
     fun setFirstBus(value: String) = _state.update { it.copy(firstBus = value) }
     fun setLastBus(value: String) = _state.update { it.copy(lastBus = value) }
     fun setFare(value: String) = _state.update { it.copy(fare = value) }
+    fun setUpDestination(value: String) = _state.update { it.copy(upDestination = value) }
+    fun setDownDestination(value: String) = _state.update { it.copy(downDestination = value) }
+    fun setUpTimetable(value: String) = _state.update { it.copy(upTimetable = value) }
+    fun setDownTimetable(value: String) = _state.update { it.copy(downTimetable = value) }
+    fun setDestination(value: String) = _state.update { it.copy(destination = value) }
+    fun setTimetable(value: String) = _state.update { it.copy(timetable = value) }
     fun setColorHex(value: String) = _state.update { it.copy(colorHex = value) }
     fun setEditDirection(direction: Int) = _state.update { it.copy(editDirection = direction) }
     fun consumeMessage() = _state.update { it.copy(message = null) }
@@ -199,31 +220,44 @@ class LineEditViewModel(
             return
         }
         viewModelScope.launch {
-            val cityId = repo.ensureDefaultCity()
             when (s.lineType) {
                 LineType.BUS -> {
+                    val existing = if (lineId > 0L) repo.getBusLine(lineId) else null
+                    val effectiveCityId = existing?.cityId
+                        ?: cityId.takeIf { it > 0L }
+                        ?: repo.ensureDefaultCity()
                     val newId = repo.saveBusLine(
                         BusLineEntity(
                             id = lineId,
-                            cityId = cityId,
+                            cityId = effectiveCityId,
                             lineName = s.lineName.trim(),
                             firstBus = s.firstBus.trim(),
                             lastBus = s.lastBus.trim(),
-                            fare = s.fare.trim()
+                            fare = s.fare.trim(),
+                            upDestination = s.upDestination.trim(),
+                            downDestination = s.downDestination.trim(),
+                            upTimetable = s.upTimetable.trim(),
+                            downTimetable = s.downTimetable.trim()
                         )
                     )
                     reconcileBus(newId, BusStationEntity.DIRECTION_UP, s.upStations)
                     reconcileBus(newId, BusStationEntity.DIRECTION_DOWN, s.downStations)
                 }
                 LineType.METRO -> {
+                    val existing = if (lineId > 0L) repo.getMetroLine(lineId) else null
+                    val effectiveCityId = existing?.cityId
+                        ?: cityId.takeIf { it > 0L }
+                        ?: repo.ensureDefaultCity()
                     val newId = repo.saveMetroLine(
                         MetroLineEntity(
                             id = lineId,
-                            cityId = cityId,
+                            cityId = effectiveCityId,
                             lineName = s.lineName.trim(),
                             firstBus = s.firstBus.trim(),
                             lastBus = s.lastBus.trim(),
                             fare = s.fare.trim(),
+                            destination = s.destination.trim(),
+                            timetable = s.timetable.trim(),
                             colorHex = s.colorHex
                         )
                     )

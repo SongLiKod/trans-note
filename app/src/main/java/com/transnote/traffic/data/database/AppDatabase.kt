@@ -5,6 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
@@ -21,7 +22,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MetroEntranceEntity::class,
         BusStationEntranceCrossRef::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -40,6 +41,18 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        /** v1 → v2：为线路增加「开往方向 / 时刻表」字段（保留已有数据） */
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE bus_line ADD COLUMN upDestination TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE bus_line ADD COLUMN downDestination TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE bus_line ADD COLUMN upTimetable TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE bus_line ADD COLUMN downTimetable TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE metro_line ADD COLUMN destination TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE metro_line ADD COLUMN timetable TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: build(context.applicationContext).also { INSTANCE = it }
@@ -56,6 +69,7 @@ abstract class AppDatabase : RoomDatabase() {
                         )
                     }
                 })
+                .addMigrations(MIGRATION_1_2)
                 .fallbackToDestructiveMigration()
                 .build()
 

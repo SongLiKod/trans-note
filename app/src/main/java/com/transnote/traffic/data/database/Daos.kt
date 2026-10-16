@@ -31,6 +31,9 @@ interface CityDao {
 
     @Query("SELECT * FROM city WHERE cityName = :name LIMIT 1")
     suspend fun getByName(name: String): CityEntity?
+
+    @Query("DELETE FROM city WHERE cityId = :id")
+    suspend fun deleteById(id: Long)
 }
 
 @Dao
@@ -49,6 +52,9 @@ interface BusLineDao {
 
     @Query("SELECT * FROM bus_line ORDER BY isPinned DESC, isFavorite DESC, createdAt DESC")
     fun observeAll(): Flow<List<BusLineEntity>>
+
+    @Query("SELECT * FROM bus_line WHERE cityId = :cityId ORDER BY isPinned DESC, isFavorite DESC, createdAt DESC")
+    fun observeByCity(cityId: Long): Flow<List<BusLineEntity>>
 
     @Query("SELECT * FROM bus_line ORDER BY isPinned DESC, isFavorite DESC, createdAt DESC")
     suspend fun getAllOnce(): List<BusLineEntity>
@@ -172,6 +178,9 @@ interface MetroLineDao {
 
     @Query("SELECT * FROM metro_line ORDER BY isPinned DESC, isFavorite DESC, createdAt DESC")
     fun observeAll(): Flow<List<MetroLineEntity>>
+
+    @Query("SELECT * FROM metro_line WHERE cityId = :cityId ORDER BY isPinned DESC, isFavorite DESC, createdAt DESC")
+    fun observeByCity(cityId: Long): Flow<List<MetroLineEntity>>
 
     @Query("SELECT * FROM metro_line ORDER BY isPinned DESC, isFavorite DESC, createdAt DESC")
     suspend fun getAllOnce(): List<MetroLineEntity>

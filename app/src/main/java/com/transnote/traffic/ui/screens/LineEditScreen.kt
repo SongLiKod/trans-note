@@ -40,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -48,6 +49,7 @@ import com.transnote.traffic.data.database.BusStationEntity
 import com.transnote.traffic.ui.components.DragReorderColumn
 import com.transnote.traffic.ui.components.LabeledTextField
 import com.transnote.traffic.ui.components.SectionTitle
+import com.transnote.traffic.ui.components.StationTimelineRow
 import com.transnote.traffic.ui.components.ThemedDivider
 import com.transnote.traffic.ui.components.TransNoteCard
 import com.transnote.traffic.ui.components.TransNoteTopBar
@@ -66,6 +68,7 @@ fun LineEditScreen(
     container: AppContainer,
     lineType: LineType,
     lineId: Long,
+    cityId: Long,
     ocrLines: List<String>?,
     onConsumeOcr: () -> Unit,
     onOpenOcr: () -> Unit,
@@ -73,7 +76,7 @@ fun LineEditScreen(
 ) {
     val viewModel: LineEditViewModel = viewModel(
         factory = containerViewModelFactory {
-            LineEditViewModel(it.repository, lineType, lineId)
+            LineEditViewModel(it.repository, lineType, lineId, cityId)
         }
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -218,6 +221,47 @@ fun LineEditScreen(
                 }
             }
 
+            Spacer(Modifier.height(4.dp))
+            SectionTitle("开往方向与时刻表")
+
+            if (lineType == LineType.BUS) {
+                val up = state.editDirection == BusStationEntity.DIRECTION_UP
+                val directionLabel = if (up) "上行" else "下行"
+                LabeledTextField(
+                    label = "${directionLabel}开往方向",
+                    value = if (up) state.upDestination else state.downDestination,
+                    onValueChange = if (up) viewModel::setUpDestination else viewModel::setDownDestination,
+                    placeholder = "如：开往 火车站"
+                )
+                Spacer(Modifier.height(8.dp))
+                LabeledTextField(
+                    label = "${directionLabel}时刻表",
+                    value = if (up) state.upTimetable else state.downTimetable,
+                    onValueChange = if (up) viewModel::setUpTimetable else viewModel::setDownTimetable,
+                    singleLine = false,
+                    minLines = 2,
+                    placeholder = "如：06:00 06:20 06:40，或每行一个发车时间"
+                )
+            } else {
+                LabeledTextField(
+                    label = "开往方向",
+                    value = state.destination,
+                    onValueChange = viewModel::setDestination,
+                    placeholder = "如：开往 高铁站"
+                )
+                Spacer(Modifier.height(8.dp))
+                LabeledTextField(
+                    label = "时刻表",
+                    value = state.timetable,
+                    onValueChange = viewModel::setTimetable,
+                    singleLine = false,
+                    minLines = 2,
+                    placeholder = "如：06:00 06:20 06:40，或每行一个发车时间"
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+
             SectionTitle("站点列表（${stations.size}）")
 
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -265,36 +309,17 @@ fun LineEditScreen(
                     items = stations,
                     onMove = viewModel::moveStation
                 ) { index, item, isDragging ->
-                    Surface(
-                        color = if (isDragging) MaterialTheme.colorScheme.surfaceVariant
-                        else MaterialTheme.colorScheme.surface,
-                        shape = MaterialTheme.shapes.small,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, TransNoteTheme.colors.divider),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
+                    StationTimelineRow(
+                        index = index,
+                        total = stations.size,
+                        isTransfer = false,
+                        isDragging = isDragging,
+                        onClick = { renameIndex = index },
+                        trailing = {
                             Icon(
                                 Icons.Filled.DragHandle,
                                 contentDescription = "拖拽排序",
                                 tint = TransNoteTheme.colors.hintText
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                "${index + 1}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = TransNoteTheme.colors.hintText,
-                                modifier = Modifier.width(24.dp)
-                            )
-                            Text(
-                                item.name,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.weight(1f)
                             )
                             IconButton(onClick = { renameIndex = index }) {
                                 Icon(Icons.Filled.Edit, contentDescription = "重命名")
@@ -306,6 +331,24 @@ fun LineEditScreen(
                                     tint = TransNoteTheme.colors.danger
                                 )
                             }
+                        }
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "${index + 1}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TransNoteTheme.colors.hintText,
+                                modifier = Modifier.width(22.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                item.name,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
                         }
                     }
                 }

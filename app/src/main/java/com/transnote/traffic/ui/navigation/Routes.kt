@@ -8,8 +8,9 @@ object Routes {
     const val SEARCH = "search"
     const val SETTINGS = "settings"
 
-    const val EDIT_LINE = "edit_line?type={type}&id={id}"
-    fun editLine(type: String, id: Long = 0L) = "edit_line?type=$type&id=$id"
+    const val EDIT_LINE = "edit_line?type={type}&id={id}&cityId={cityId}"
+    fun editLine(type: String, id: Long = 0L, cityId: Long = 0L) =
+        "edit_line?type=$type&id=$id&cityId=$cityId"
 
     const val BUS_LINE = "bus_line/{id}"
     fun busLine(id: Long) = "bus_line/$id"
