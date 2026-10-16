@@ -1,9 +1,12 @@
 package com.transnote.traffic.ui.components
 
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.text.TextPaint
@@ -132,33 +135,38 @@ private fun rememberLifecycleMapView(config: MapView.() -> Unit = {}): MapView {
 
 /**
  * 线路轨迹绘制层：平滑连线 + 站点圆点。
- * - 普通站点：小圆点（线路色）；
+ * - 普通站点：小圆点（线路色 / 站点自定义色）；
  * - 换乘站点：较大圆点（警示色）；
- * - 选中 / 搜索聚焦站点：大圆点（强调色）并显示站名气泡。
+ * - 选中 / 搜索聚焦站点：大圆点（强调色）并显示站名气泡与标记图标。
+ *
+ * 连线粗细、圆点大小、连线与圆点颜色均来自线路的「线路图样式」设置。
  */
 private class TrackOverlay(
     private val stations: List<MapPoint>,
     private val lineColor: Int,
+    private val dotColor: Int,
     private val transferColor: Int,
     private val highlightColor: Int,
     private val labelTextColor: Int,
-    private val labelSubTextColor: Int,
     private val labelBgColor: Int,
+    private val railWidthDp: Int,
+    private val dotSizeDp: Int,
+    private val iconBitmaps: Map<String, Bitmap>,
     private val drawTrack: Boolean,
     private val onTapStation: ((Long) -> Unit)?
 ) : Overlay() {
 
     var highlightKey: Long? = null
 
-    /** 站点圆点颜色：优先使用站点自定义色，其次换乘警示色，最后线路色 */
+    /** 站点圆点颜色：优先使用站点自定义色，其次换乘警示色，最后线路圆点色 */
     private fun dotColorOf(station: MapPoint): Int {
         val hex = station.colorHex.trim()
         if (hex.isNotEmpty()) {
             return runCatching {
                 Color.parseColor(if (hex.startsWith("#")) hex else "#$hex")
-            }.getOrDefault(lineColor)
+            }.getOrDefault(dotColor)
         }
-        return if (station.isTransfer) transferColor else lineColor
+        return if (station.isTransfer) transferColor else dotColor
     }
 
     override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
@@ -167,15 +175,15 @@ private class TrackOverlay(
         val projection = mapView.projection
         val pts = stations.map { projection.toPixels(GeoPoint(it.latitude, it.longitude), null) }
 
-        // ---- 轨迹线 ----
+        // ---- 轨迹线（粗细来自线路图样式设置）----
         if (drawTrack && pts.size >= 2) {
             val track = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = lineColor
                 style = Paint.Style.STROKE
-                strokeWidth = 5f * density
+                strokeWidth = railWidthDp.coerceIn(1, 12) * density
                 strokeCap = Paint.Cap.ROUND
                 strokeJoin = Paint.Join.ROUND
-                alpha = 205
+                alpha = 225
             }
             val path = Path().apply {
                 moveTo(pts.first().x.toFloat(), pts.first().y.toFloat())
@@ -193,6 +201,9 @@ private class TrackOverlay(
             color = labelBgColor
             style = Paint.Style.FILL
         }
+        val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            colorFilter = PorterDuffColorFilter(lineColor, PorterDuff.Mode.SRC_IN)
+        }
         val maxTextWidth = canvas.width * 0.7f
         val labelText = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = labelTextColor
@@ -200,20 +211,19 @@ private class TrackOverlay(
             textAlign = Paint.Align.CENTER
             typeface = Typeface.DEFAULT_BOLD
         }
-        val markerText = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = labelSubTextColor
-            textSize = 10f * density
-            textAlign = Paint.Align.CENTER
-            typeface = Typeface.DEFAULT
-        }
+
+        // 圆点基准半径来自「圆点大小」设置（直径 dp）
+        val baseRadius = dotSizeDp.coerceIn(8, 32) / 2f * density
+        val iconSize = 14f * density
+        val iconGap = 3f * density
 
         pts.forEachIndexed { i, p ->
             val station = stations[i]
             val selected = highlightKey != null && station.key == highlightKey
             val radius = when {
-                selected -> 10f * density
-                station.isTransfer -> 7.5f * density
-                else -> 6f * density
+                selected -> baseRadius * 1.7f
+                station.isTransfer -> baseRadius * 1.25f
+                else -> baseRadius
             }
             canvas.drawCircle(p.x.toFloat(), p.y.toFloat(), radius + 3f * density, ring)
             dot.color = when {
@@ -223,28 +233,19 @@ private class TrackOverlay(
             canvas.drawCircle(p.x.toFloat(), p.y.toFloat(), radius, dot)
 
             if (selected && station.title.isNotBlank()) {
-                // 气泡：第一行为站名，第二行为站点标记（多选），均做超宽省略
+                // 气泡：第一行为站名，第二行为站点标记「通用图标」（不写文字）
                 val titleLine = TextUtils.ellipsize(
                     station.title, labelText, maxTextWidth, TextUtils.TruncateAt.END
                 ).toString()
-                val markerLine = station.markers.joinToString(" · ")
-                val hasMarkers = markerLine.isNotBlank()
-                val subLine = if (hasMarkers) {
-                    TextUtils.ellipsize(
-                        markerLine, markerText, maxTextWidth, TextUtils.TruncateAt.END
-                    ).toString()
-                } else {
-                    ""
-                }
+                val icons = station.markers.mapNotNull { iconBitmaps[markerIconKey(it)] }
+                val iconsWidth = if (icons.isEmpty()) 0f
+                else icons.size * iconSize + (icons.size - 1) * iconGap
                 val padH = 6f * density
                 val padV = 4f * density
-                val lineGap = 2f * density
-                val contentWidth = maxOf(
-                    labelText.measureText(titleLine),
-                    if (hasMarkers) markerText.measureText(subLine) else 0f
-                )
-                val contentHeight = labelText.textSize +
-                    if (hasMarkers) lineGap + markerText.textSize else 0f
+                val lineGap = if (icons.isEmpty()) 0f else 3f * density
+                val contentWidth = maxOf(labelText.measureText(titleLine), iconsWidth)
+                val contentHeight = labelText.textSize + lineGap +
+                    (if (icons.isEmpty()) 0f else iconSize)
                 val halfWidth = contentWidth / 2f + padH
                 val top = p.y - radius - 10f * density - contentHeight - padV * 2
                 val rect = RectF(
@@ -254,11 +255,19 @@ private class TrackOverlay(
                     top + contentHeight + padV * 2
                 )
                 canvas.drawRoundRect(rect, 6f * density, 6f * density, labelBg)
-                var baseline = top + padV + labelText.textSize - labelText.descent()
+                val baseline = top + padV + labelText.textSize - labelText.descent()
                 canvas.drawText(titleLine, p.x.toFloat(), baseline, labelText)
-                if (hasMarkers) {
-                    baseline += lineGap + markerText.textSize
-                    canvas.drawText(subLine, p.x.toFloat(), baseline, markerText)
+                if (icons.isNotEmpty()) {
+                    var x = p.x - iconsWidth / 2f
+                    val iconTop = top + padV + labelText.textSize + lineGap
+                    icons.forEach { bitmap ->
+                        canvas.drawBitmap(
+                            bitmap, null,
+                            RectF(x, iconTop, x + iconSize, iconTop + iconSize),
+                            iconPaint
+                        )
+                        x += iconSize + iconGap
+                    }
                 }
             }
         }
@@ -312,14 +321,18 @@ private fun TrackMapCanvas(
     onTapStation: ((Long) -> Unit)?,
     defaultCenter: Pair<Double, Double>?,
     lineColorArgb: Int,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    dotColorArgb: Int = lineColorArgb,
+    railWidthDp: Int = 4,
+    dotSizeDp: Int = 14
 ) {
     val lineColor = lineColorArgb
     val transferColor = TransNoteTheme.colors.warning.toArgb()
     val highlightColor = TransNoteTheme.colors.danger.toArgb()
     val labelTextColor = MaterialTheme.colorScheme.onSurface.toArgb()
-    val labelSubTextColor = TransNoteTheme.colors.hintText.toArgb()
     val labelBgColor = MaterialTheme.colorScheme.surface.toArgb()
+    // 标记图标：栅格化为位图供原生 Canvas 绘制（地图气泡内不写文字）
+    val iconBitmaps = rememberMarkerIconBitmaps()
 
     val mapView = rememberLifecycleMapView {
         val base = defaultCenter ?: points.firstOrNull()?.let { it.latitude to it.longitude }
@@ -347,11 +360,14 @@ private fun TrackMapCanvas(
             val overlay = TrackOverlay(
                 stations = points,
                 lineColor = lineColor,
+                dotColor = dotColorArgb,
                 transferColor = transferColor,
                 highlightColor = highlightColor,
                 labelTextColor = labelTextColor,
-                labelSubTextColor = labelSubTextColor,
                 labelBgColor = labelBgColor,
+                railWidthDp = railWidthDp,
+                dotSizeDp = dotSizeDp,
+                iconBitmaps = iconBitmaps,
                 drawTrack = drawTrack,
                 onTapStation = onTapStation
             )
@@ -410,10 +426,17 @@ fun StationTrackMap(
     searchItems: List<MapSearchItem> = emptyList(),
     allowFullscreen: Boolean = true,
     emptyHint: String = "暂无坐标点，请为站点设置地图位置",
-    lineColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primary
+    lineColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primary,
+    /** 站点圆点默认颜色（线路图样式；默认跟随线路颜色） */
+    dotColor: androidx.compose.ui.graphics.Color = lineColor,
+    /** 连线粗细（dp） */
+    railWidthDp: Int = 4,
+    /** 站点圆点大小（dp，直径） */
+    dotSizeDp: Int = 14
 ) {
     var fullscreen by remember { mutableStateOf(false) }
     val lineArgb = lineColor.toArgb()
+    val dotArgb = dotColor.toArgb()
 
     Box(modifier = modifier.clip(MaterialTheme.shapes.medium)) {
         TrackMapCanvas(
@@ -423,7 +446,10 @@ fun StationTrackMap(
             onTapStation = onSelectKey,
             defaultCenter = defaultCenter,
             lineColorArgb = lineArgb,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            dotColorArgb = dotArgb,
+            railWidthDp = railWidthDp,
+            dotSizeDp = dotSizeDp
         )
 
         if (points.isEmpty()) {
@@ -470,6 +496,9 @@ fun StationTrackMap(
             defaultCenter = defaultCenter,
             searchItems = searchItems,
             lineColorArgb = lineArgb,
+            dotColorArgb = dotArgb,
+            railWidthDp = railWidthDp,
+            dotSizeDp = dotSizeDp,
             onDismiss = { fullscreen = false }
         )
     }
@@ -484,6 +513,9 @@ private fun FullscreenTrackMapDialog(
     defaultCenter: Pair<Double, Double>?,
     searchItems: List<MapSearchItem>,
     lineColorArgb: Int,
+    dotColorArgb: Int = lineColorArgb,
+    railWidthDp: Int = 4,
+    dotSizeDp: Int = 14,
     onDismiss: () -> Unit
 ) {
     var keyword by remember { mutableStateOf("") }
@@ -519,7 +551,10 @@ private fun FullscreenTrackMapDialog(
                     },
                     defaultCenter = defaultCenter,
                     lineColorArgb = lineColorArgb,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    dotColorArgb = dotColorArgb,
+                    railWidthDp = railWidthDp,
+                    dotSizeDp = dotSizeDp
                 )
 
                 Column(
@@ -587,7 +622,7 @@ private fun FullscreenTrackMapDialog(
                                         }
                                         if (item.markers.isNotEmpty()) {
                                             Spacer(Modifier.height(4.dp))
-                                            MarkerTagRow(
+                                            MarkerIconRow(
                                                 names = item.markers,
                                                 accent = MaterialTheme.colorScheme.primary,
                                                 max = 4

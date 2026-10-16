@@ -132,17 +132,6 @@ fun TransferTag(modifier: Modifier = Modifier) {
     )
 }
 
-/** 站点标记标签（多选），以线路主题色描边展示在线路上 */
-@Composable
-fun MarkerTag(name: String, accent: Color, modifier: Modifier = Modifier) {
-    Tag(
-        text = name,
-        background = accent.copy(alpha = 0.14f),
-        textColor = accent,
-        modifier = modifier
-    )
-}
-
 /** 空态占位 */
 @Composable
 fun EmptyState(

@@ -44,6 +44,14 @@ data class BusLineEntity(
     @ColumnInfo(defaultValue = "") val downTimetable: String = "",
     /** 线路颜色（HEX，如 #2563EB；空表示使用默认色） */
     @ColumnInfo(defaultValue = "") val colorHex: String = "",
+    /** 线路图样式：连线颜色（空=跟随线路颜色） */
+    @ColumnInfo(defaultValue = "") val railColorHex: String = "",
+    /** 线路图样式：连线粗细（dp） */
+    @ColumnInfo(defaultValue = "4") val railWidthDp: Int = 4,
+    /** 线路图样式：站点圆点默认颜色（空=跟随线路颜色） */
+    @ColumnInfo(defaultValue = "") val dotColorHex: String = "",
+    /** 线路图样式：站点圆点大小（dp，直径） */
+    @ColumnInfo(defaultValue = "14") val dotSizeDp: Int = 14,
     // 三期：收藏 / 置顶 / 分组
     val isFavorite: Boolean = false,
     val isPinned: Boolean = false,
@@ -112,6 +120,14 @@ data class MetroLineEntity(
     @ColumnInfo(defaultValue = "") val destination: String = "",
     @ColumnInfo(defaultValue = "") val timetable: String = "",
     val colorHex: String = "#2563EB",
+    /** 线路图样式：连线颜色（空=跟随线路颜色） */
+    @ColumnInfo(defaultValue = "") val railColorHex: String = "",
+    /** 线路图样式：连线粗细（dp） */
+    @ColumnInfo(defaultValue = "4") val railWidthDp: Int = 4,
+    /** 线路图样式：站点圆点默认颜色（空=跟随线路颜色） */
+    @ColumnInfo(defaultValue = "") val dotColorHex: String = "",
+    /** 线路图样式：站点圆点大小（dp，直径） */
+    @ColumnInfo(defaultValue = "14") val dotSizeDp: Int = 14,
     val isFavorite: Boolean = false,
     val isPinned: Boolean = false,
     val groupName: String = "",

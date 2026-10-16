@@ -47,6 +47,15 @@ object LineColors {
     fun station(stationHex: String?, lineHex: String?, fallback: Color): Color =
         if (stationHex.isNullOrBlank()) line(lineHex, fallback) else parse(stationHex, line(lineHex, fallback))
 
+    /**
+     * 线路图元素颜色（连线 / 圆点）：为空时「跟随线路颜色」。
+     *
+     * 与 [line] 的区别：本方法在为空时返回 [fallback]（即线路颜色），
+     * 而不是 [DEFAULT] 默认蓝，因此线路连线默认与线路同色。
+     */
+    fun inherit(hex: String?, fallback: Color): Color =
+        if (hex.isNullOrBlank()) fallback else parse(hex, fallback)
+
     /** 在给定底色上可读的前景色（用于色块上的对勾） */
     fun onColor(background: Color): Color =
         if (background.luminance() > 0.6f) Color(0xFF1F2937) else Color.White

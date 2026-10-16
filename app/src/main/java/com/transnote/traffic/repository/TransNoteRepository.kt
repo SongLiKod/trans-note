@@ -224,10 +224,71 @@ class TransNoteRepository(
 
     fun observeBusStation(id: Long): Flow<BusStationEntity?> = db.busStationDao().observeById(id)
 
-    suspend fun saveBusStation(station: BusStationEntity): Long =
-        if (station.id == 0L) db.busStationDao().insert(station) else {
-            db.busStationDao().update(station); station.id
+    suspend fun saveBusStation(station: BusStationEntity): Long {
+        val target = if (station.id == 0L) autoLocateForBus(station) else station
+        return if (target.id == 0L) db.busStationDao().insert(target) else {
+            db.busStationDao().update(target); target.id
         }
+    }
+
+    // ================= 站点地图点位自动关联 =================
+
+    /**
+     * 站点名归一化：用于「同名站点」匹配。
+     * 去掉空白、括号补充说明、常见后缀（站 / 口），并统一小写，
+     * 使「人民广场」「人民广场站」「人民广场（1号口）」可以互相关联。
+     */
+    private fun normalizeStationName(raw: String): String =
+        raw.trim()
+            .replace(Regex("[（(].*?[)）]"), "")
+            .replace(Regex("\\s+"), "")
+            .removeSuffix("站")
+            .removeSuffix("口")
+            .lowercase()
+
+    /**
+     * 城市内「已知坐标索引」：归一化站名 → 坐标。
+     * 公交站点与地铁站点互为参照，因此新增公交站可自动继承同名地铁站坐标，反之亦然。
+     */
+    private suspend fun knownCoordinateIndex(cityId: Long): Map<String, Pair<Double, Double>> {
+        val busLineIds = db.busLineDao().getAllOnce()
+            .filter { it.cityId == cityId }.map { it.id }.toSet()
+        val metroLineIds = db.metroLineDao().getAllOnce()
+            .filter { it.cityId == cityId }.map { it.id }.toSet()
+        val result = mutableMapOf<String, Pair<Double, Double>>()
+        db.busStationDao().getAllOnce()
+            .filter { it.lineId in busLineIds && CoordinateUtils.isValid(it.latitude, it.longitude) }
+            .forEach { result.putIfAbsent(normalizeStationName(it.name), it.latitude!! to it.longitude!!) }
+        db.metroStationDao().getAllOnce()
+            .filter { it.lineId in metroLineIds && CoordinateUtils.isValid(it.latitude, it.longitude) }
+            .forEach { result.putIfAbsent(normalizeStationName(it.name), it.latitude!! to it.longitude!!) }
+        return result
+    }
+
+    /**
+     * 按站点名自动匹配城市内已有的地图点位。
+     * 用于「新增站点时自动关联地图地点」，避免用户逐站手动选点。
+     */
+    suspend fun findStationCoordinate(cityId: Long, name: String): Pair<Double, Double>? {
+        if (name.isBlank() || cityId <= 0L) return null
+        return knownCoordinateIndex(cityId)[normalizeStationName(name)]
+    }
+
+    /** 新增公交站点且未指定坐标时，按站名自动关联城市内已有地图点位 */
+    private suspend fun autoLocateForBus(station: BusStationEntity): BusStationEntity {
+        if (CoordinateUtils.isValid(station.latitude, station.longitude)) return station
+        val cityId = db.busLineDao().getById(station.lineId)?.cityId ?: return station
+        val point = findStationCoordinate(cityId, station.name) ?: return station
+        return station.copy(latitude = point.first, longitude = point.second)
+    }
+
+    /** 新增地铁站点且未指定坐标时，按站名自动关联城市内已有地图点位 */
+    private suspend fun autoLocateForMetro(station: MetroStationEntity): MetroStationEntity {
+        if (CoordinateUtils.isValid(station.latitude, station.longitude)) return station
+        val cityId = db.metroLineDao().getById(station.lineId)?.cityId ?: return station
+        val point = findStationCoordinate(cityId, station.name) ?: return station
+        return station.copy(latitude = point.first, longitude = point.second)
+    }
 
     /** 批量新增站点（OCR 结果一次导入，自动递增 orderIndex） */
     suspend fun addBusStations(lineId: Long, direction: Int, names: List<String>): Int =
@@ -236,12 +297,18 @@ class TransNoteRepository(
             if (cleaned.isEmpty()) return@withLock 0
             val existing = db.busStationDao().getByLineAndDirection(lineId, direction)
             val start = (existing.maxOfOrNull { it.orderIndex } ?: -1) + 1
-            val list = cleaned.mapIndexed { index, name ->
+            // 新增站点自动关联地图点位（按站名匹配城市内已有坐标）
+            val index = db.busLineDao().getById(lineId)?.cityId
+                ?.let { knownCoordinateIndex(it) }.orEmpty()
+            val list = cleaned.mapIndexed { i, name ->
+                val point = index[normalizeStationName(name)]
                 BusStationEntity(
                     lineId = lineId,
                     direction = direction,
-                    orderIndex = start + index,
-                    name = name
+                    orderIndex = start + i,
+                    name = name,
+                    latitude = point?.first,
+                    longitude = point?.second
                 )
             }
             db.busStationDao().insertAll(list)
@@ -332,10 +399,12 @@ class TransNoteRepository(
 
     fun observeMetroStation(id: Long): Flow<MetroStationEntity?> = db.metroStationDao().observeById(id)
 
-    suspend fun saveMetroStation(station: MetroStationEntity): Long =
-        if (station.id == 0L) db.metroStationDao().insert(station) else {
-            db.metroStationDao().update(station); station.id
+    suspend fun saveMetroStation(station: MetroStationEntity): Long {
+        val target = if (station.id == 0L) autoLocateForMetro(station) else station
+        return if (target.id == 0L) db.metroStationDao().insert(target) else {
+            db.metroStationDao().update(target); target.id
         }
+    }
 
     suspend fun addMetroStations(lineId: Long, names: List<String>): Int =
         stationWriteMutex.withLock {
@@ -343,8 +412,18 @@ class TransNoteRepository(
             if (cleaned.isEmpty()) return@withLock 0
             val existing = db.metroStationDao().getByLine(lineId)
             val start = (existing.maxOfOrNull { it.orderIndex } ?: -1) + 1
-            val list = cleaned.mapIndexed { index, name ->
-                MetroStationEntity(lineId = lineId, orderIndex = start + index, name = name)
+            // 新增站点自动关联地图点位（按站名匹配城市内已有坐标）
+            val index = db.metroLineDao().getById(lineId)?.cityId
+                ?.let { knownCoordinateIndex(it) }.orEmpty()
+            val list = cleaned.mapIndexed { i, name ->
+                val point = index[normalizeStationName(name)]
+                MetroStationEntity(
+                    lineId = lineId,
+                    orderIndex = start + i,
+                    name = name,
+                    latitude = point?.first,
+                    longitude = point?.second
+                )
             }
             db.metroStationDao().insertAll(list)
             list.size

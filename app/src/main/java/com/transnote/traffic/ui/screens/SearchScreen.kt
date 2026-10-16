@@ -37,7 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.transnote.traffic.AppContainer
 import com.transnote.traffic.ui.components.EmptyState
-import com.transnote.traffic.ui.components.MarkerTagRow
+import com.transnote.traffic.ui.components.MarkerIconRow
 import com.transnote.traffic.ui.components.Tag
 import com.transnote.traffic.ui.components.TransNoteCard
 import com.transnote.traffic.ui.components.TransNoteTopBar
@@ -200,7 +200,7 @@ private fun SearchResultCard(
                 }
                 if (result.markers.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
-                    MarkerTagRow(
+                    MarkerIconRow(
                         names = result.markers,
                         accent = MaterialTheme.colorScheme.primary,
                         max = 4

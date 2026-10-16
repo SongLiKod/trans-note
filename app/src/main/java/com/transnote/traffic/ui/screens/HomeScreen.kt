@@ -59,7 +59,7 @@ import com.transnote.traffic.data.database.CityEntity
 import com.transnote.traffic.data.database.MetroLineEntity
 import com.transnote.traffic.ui.components.ConfirmDialog
 import com.transnote.traffic.ui.components.EmptyState
-import com.transnote.traffic.ui.components.MarkerTagRow
+import com.transnote.traffic.ui.components.MarkerIconRow
 import com.transnote.traffic.ui.components.Tag
 import com.transnote.traffic.ui.components.TransNoteCard
 import com.transnote.traffic.ui.components.TransNoteTopBar
@@ -642,7 +642,7 @@ private fun LineCard(
                 )
                 if (markers.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
-                    MarkerTagRow(names = markers, accent = accent, max = 4)
+                    MarkerIconRow(names = markers, accent = accent, max = 4)
                 }
             }
             Box {

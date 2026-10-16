@@ -23,7 +23,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         BusStationEntranceCrossRef::class,
         StationMarkerEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -87,6 +87,23 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v3 → v4：线路图样式（连线颜色/粗细、站点圆点颜色/大小），保留已有数据。
+         *
+         * 默认值与 [BusLineEntity] / [MetroLineEntity] 中 `@ColumnInfo(defaultValue = ...)`
+         * 保持一致，否则 Room 打开数据库时的 schema 校验会失败。
+         */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                listOf("bus_line", "metro_line").forEach { table ->
+                    db.execSQL("ALTER TABLE $table ADD COLUMN railColorHex TEXT NOT NULL DEFAULT ''")
+                    db.execSQL("ALTER TABLE $table ADD COLUMN railWidthDp INTEGER NOT NULL DEFAULT 4")
+                    db.execSQL("ALTER TABLE $table ADD COLUMN dotColorHex TEXT NOT NULL DEFAULT ''")
+                    db.execSQL("ALTER TABLE $table ADD COLUMN dotSizeDp INTEGER NOT NULL DEFAULT 14")
+                }
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: build(context.applicationContext).also { INSTANCE = it }
@@ -105,7 +122,7 @@ abstract class AppDatabase : RoomDatabase() {
                         seedDefaultMarkers(db)
                     }
                 })
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .fallbackToDestructiveMigration()
                 .build()
 

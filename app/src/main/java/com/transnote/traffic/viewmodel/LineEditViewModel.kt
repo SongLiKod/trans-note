@@ -39,6 +39,14 @@ data class LineEditUiState(
     val destination: String = "",
     val timetable: String = "",
     val colorHex: String = "#2563EB",
+    /** 线路图样式：连线颜色（空=跟随线路颜色） */
+    val railColorHex: String = "",
+    /** 线路图样式：连线粗细（dp） */
+    val railWidthDp: Int = 4,
+    /** 线路图样式：站点圆点颜色（空=跟随线路颜色） */
+    val dotColorHex: String = "",
+    /** 线路图样式：站点圆点大小（dp，直径） */
+    val dotSizeDp: Int = 14,
     val upStations: List<StationDraft> = emptyList(),
     val downStations: List<StationDraft> = emptyList(),
     val metroStations: List<StationDraft> = emptyList(),
@@ -106,6 +114,10 @@ class LineEditViewModel(
                             upTimetable = line.upTimetable,
                             downTimetable = line.downTimetable,
                             colorHex = line.colorHex.ifBlank { "#2563EB" },
+                            railColorHex = line.railColorHex,
+                            railWidthDp = line.railWidthDp,
+                            dotColorHex = line.dotColorHex,
+                            dotSizeDp = line.dotSizeDp,
                             upStations = up,
                             downStations = down,
                             loading = false
@@ -129,6 +141,10 @@ class LineEditViewModel(
                             destination = line.destination,
                             timetable = line.timetable,
                             colorHex = line.colorHex.ifBlank { "#2563EB" },
+                            railColorHex = line.railColorHex,
+                            railWidthDp = line.railWidthDp,
+                            dotColorHex = line.dotColorHex,
+                            dotSizeDp = line.dotSizeDp,
                             metroStations = stations,
                             loading = false
                         )
@@ -152,6 +168,10 @@ class LineEditViewModel(
     fun setDestination(value: String) = _state.update { it.copy(destination = value) }
     fun setTimetable(value: String) = _state.update { it.copy(timetable = value) }
     fun setColorHex(value: String) = _state.update { it.copy(colorHex = value) }
+    fun setRailColorHex(value: String) = _state.update { it.copy(railColorHex = value) }
+    fun setRailWidthDp(value: Int) = _state.update { it.copy(railWidthDp = value.coerceIn(1, 12)) }
+    fun setDotColorHex(value: String) = _state.update { it.copy(dotColorHex = value) }
+    fun setDotSizeDp(value: Int) = _state.update { it.copy(dotSizeDp = value.coerceIn(8, 32)) }
     fun setEditDirection(direction: Int) = _state.update { it.copy(editDirection = direction) }
     fun consumeMessage() = _state.update { it.copy(message = null) }
     fun consumeOcrApplied() = _state.update { it.copy(ocrApplied = false) }
@@ -267,7 +287,11 @@ class LineEditViewModel(
                             downDestination = s.downDestination.trim(),
                             upTimetable = s.upTimetable.trim(),
                             downTimetable = s.downTimetable.trim(),
-                            colorHex = s.colorHex
+                            colorHex = s.colorHex,
+                            railColorHex = s.railColorHex,
+                            railWidthDp = s.railWidthDp,
+                            dotColorHex = s.dotColorHex,
+                            dotSizeDp = s.dotSizeDp
                         )
                     )
                     reconcileBus(newId, BusStationEntity.DIRECTION_UP, s.upStations)
@@ -286,7 +310,11 @@ class LineEditViewModel(
                             fare = s.fare.trim(),
                             destination = s.destination.trim(),
                             timetable = s.timetable.trim(),
-                            colorHex = s.colorHex
+                            colorHex = s.colorHex,
+                            railColorHex = s.railColorHex,
+                            railWidthDp = s.railWidthDp,
+                            dotColorHex = s.dotColorHex,
+                            dotSizeDp = s.dotSizeDp
                         )
                     )
                     reconcileMetro(newId, s.metroStations)

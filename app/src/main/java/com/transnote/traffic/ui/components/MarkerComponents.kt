@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -35,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.transnote.traffic.data.database.StationMarkerEntity
@@ -73,6 +75,13 @@ fun MarkerSelector(
                         FilterChip(
                             selected = marker.id in selectedIds,
                             onClick = { onToggle(marker.id) },
+                            leadingIcon = {
+                                Icon(
+                                    markerIconOf(marker.name),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
                             label = { Text(marker.name) }
                         )
                     }
@@ -82,21 +91,32 @@ fun MarkerSelector(
     }
 }
 
-/** 一行标记标签（超出 [max] 个时以 +N 省略） */
+/**
+ * 一行站点标记图标（PRD：线路上显示标记不写文字，使用通用图标；超出 [max] 个时以 +N 省略）。
+ * 图标颜色跟随 [accent]（一般为线路颜色）。
+ */
 @Composable
-fun MarkerTagRow(
+fun MarkerIconRow(
     names: List<String>,
     accent: Color,
     modifier: Modifier = Modifier,
-    max: Int = Int.MAX_VALUE
+    max: Int = Int.MAX_VALUE,
+    iconSize: Dp = 16.dp
 ) {
     if (names.isEmpty()) return
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        names.take(max).forEach { name -> MarkerTag(name = name, accent = accent) }
+        names.take(max).forEach { name ->
+            Icon(
+                imageVector = markerIconOf(name),
+                contentDescription = name,
+                tint = accent,
+                modifier = Modifier.size(iconSize)
+            )
+        }
         if (names.size > max) {
             Text(
                 "+${names.size - max}",
@@ -189,6 +209,13 @@ fun MarkerManagerDialog(
                                         .fillMaxWidth()
                                         .padding(vertical = 4.dp)
                                 ) {
+                                    Icon(
+                                        markerIconOf(marker.name),
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
                                     Text(
                                         marker.name,
                                         style = MaterialTheme.typography.bodyLarge,
