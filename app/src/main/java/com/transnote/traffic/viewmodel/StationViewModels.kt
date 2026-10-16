@@ -28,6 +28,8 @@ data class StationEditorState(
     /** 所属线路（用于从站点跳转到对应线路查看） */
     val lineId: Long = 0,
     val lineName: String = "",
+    /** 所属城市中心（WGS-84），用于地图选点默认定位到当前城市 */
+    val cityCenter: Pair<Double, Double>? = null,
     val loading: Boolean = true,
     val saving: Boolean = false,
     val message: String? = null,
@@ -45,6 +47,8 @@ data class EntranceEditorState(
     val latitude: Double? = null,
     val longitude: Double? = null,
     val imagePaths: List<String> = emptyList(),
+    /** 所属城市中心（WGS-84），用于地图选点默认定位 */
+    val cityCenter: Pair<Double, Double>? = null,
     val loading: Boolean = true,
     val message: String? = null,
     val finished: Boolean = false
@@ -90,6 +94,7 @@ class BusStationViewModel(
             _editor.update { it.copy(loading = false, message = "站点不存在") }
             return
         }
+        val line = repo.getBusLine(station.lineId)
         _editor.value = StationEditorState(
             id = station.id,
             name = station.name,
@@ -99,7 +104,8 @@ class BusStationViewModel(
             imagePaths = station.imagePaths,
             isMetroTransfer = station.isMetroTransfer,
             lineId = station.lineId,
-            lineName = repo.getBusLine(station.lineId)?.lineName ?: "",
+            lineName = line?.lineName ?: "",
+            cityCenter = line?.let { repo.getCityCenter(it.cityId) },
             loading = false
         )
         _selectedEntranceIds.value = repo.getTransferEntranceIds(stationId).toSet()
@@ -244,6 +250,7 @@ class MetroStationViewModel(
             _editor.update { it.copy(loading = false, message = "站点不存在") }
             return
         }
+        val line = repo.getMetroLine(station.lineId)
         _editor.value = StationEditorState(
             id = station.id,
             name = station.name,
@@ -252,7 +259,8 @@ class MetroStationViewModel(
             longitude = station.longitude,
             imagePaths = station.imagePaths,
             lineId = station.lineId,
-            lineName = repo.getMetroLine(station.lineId)?.lineName ?: "",
+            lineName = line?.lineName ?: "",
+            cityCenter = line?.let { repo.getCityCenter(it.cityId) },
             loading = false
         )
     }
@@ -357,6 +365,9 @@ class EntranceEditViewModel(
             _editor.update { it.copy(loading = false, finished = true) }
             return
         }
+        val line = repo.getMetroStation(entrance.metroStationId)?.let { station ->
+            repo.getMetroLine(station.lineId)
+        }
         _editor.value = EntranceEditorState(
             id = entrance.id,
             stationId = entrance.metroStationId,
@@ -367,6 +378,7 @@ class EntranceEditViewModel(
             latitude = entrance.latitude,
             longitude = entrance.longitude,
             imagePaths = entrance.imagePaths,
+            cityCenter = line?.let { repo.getCityCenter(it.cityId) },
             loading = false
         )
     }

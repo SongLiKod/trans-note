@@ -29,7 +29,8 @@ fun MapPickerDialog(
     initialLatitude: Double?,
     initialLongitude: Double?,
     onConfirm: (Double, Double) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    defaultCenter: Pair<Double, Double>? = null
 ) {
     var picked by remember {
         mutableStateOf(
@@ -56,6 +57,7 @@ fun MapPickerDialog(
                     initialLatitude = initialLatitude,
                     initialLongitude = initialLongitude,
                     onPick = { lat, lng -> picked = lat to lng },
+                    defaultCenter = defaultCenter,
                     modifier = Modifier.fillMaxWidth().height(320.dp)
                 )
                 Spacer(Modifier.height(8.dp))

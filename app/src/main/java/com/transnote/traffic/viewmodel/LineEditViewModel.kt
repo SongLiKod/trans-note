@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.transnote.traffic.data.database.BusLineEntity
 import com.transnote.traffic.data.database.BusStationEntity
+import com.transnote.traffic.data.database.CityEntity
 import com.transnote.traffic.data.database.MetroLineEntity
 import com.transnote.traffic.data.database.MetroStationEntity
 import com.transnote.traffic.repository.TransNoteRepository
@@ -23,6 +24,9 @@ data class StationDraft(val id: Long = 0, val name: String = "")
 data class LineEditUiState(
     val lineType: LineType = LineType.BUS,
     val lineName: String = "",
+    /** 所属城市（可切换）*/
+    val cities: List<CityEntity> = emptyList(),
+    val selectedCityId: Long = 0L,
     val firstBus: String = "",
     val lastBus: String = "",
     val fare: String = "",
@@ -62,7 +66,20 @@ class LineEditViewModel(
     val isEditing: Boolean get() = lineId > 0
 
     init {
-        viewModelScope.launch { load() }
+        viewModelScope.launch {
+            val cities = repo.getCities()
+            // 所属城市：编辑时沿用该线路现有城市；新增时取首页当前城市
+            val existingCity = when (lineType) {
+                LineType.BUS -> if (lineId > 0L) repo.getBusLine(lineId)?.cityId else null
+                LineType.METRO -> if (lineId > 0L) repo.getMetroLine(lineId)?.cityId else null
+            }
+            val initialCity = existingCity
+                ?: cityId.takeIf { it > 0L }
+                ?: cities.firstOrNull()?.cityId
+                ?: 0L
+            _state.update { it.copy(cities = cities, selectedCityId = initialCity) }
+            load()
+        }
     }
 
     private suspend fun load() {
@@ -122,6 +139,7 @@ class LineEditViewModel(
     }
 
     fun setLineName(value: String) = _state.update { it.copy(lineName = value) }
+    fun setCityId(id: Long) = _state.update { it.copy(selectedCityId = id) }
     fun setFirstBus(value: String) = _state.update { it.copy(firstBus = value) }
     fun setLastBus(value: String) = _state.update { it.copy(lastBus = value) }
     fun setFare(value: String) = _state.update { it.copy(fare = value) }
@@ -222,9 +240,7 @@ class LineEditViewModel(
         viewModelScope.launch {
             when (s.lineType) {
                 LineType.BUS -> {
-                    val existing = if (lineId > 0L) repo.getBusLine(lineId) else null
-                    val effectiveCityId = existing?.cityId
-                        ?: cityId.takeIf { it > 0L }
+                    val effectiveCityId = s.selectedCityId.takeIf { it > 0L }
                         ?: repo.ensureDefaultCity()
                     val newId = repo.saveBusLine(
                         BusLineEntity(
@@ -244,9 +260,7 @@ class LineEditViewModel(
                     reconcileBus(newId, BusStationEntity.DIRECTION_DOWN, s.downStations)
                 }
                 LineType.METRO -> {
-                    val existing = if (lineId > 0L) repo.getMetroLine(lineId) else null
-                    val effectiveCityId = existing?.cityId
-                        ?: cityId.takeIf { it > 0L }
+                    val effectiveCityId = s.selectedCityId.takeIf { it > 0L }
                         ?: repo.ensureDefaultCity()
                     val newId = repo.saveMetroLine(
                         MetroLineEntity(

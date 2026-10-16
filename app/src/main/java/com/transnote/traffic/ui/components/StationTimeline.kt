@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -35,6 +35,7 @@ private val StationRowHeight = 72.dp
  * @param isTransfer 是否为地铁换乘站（圆点高亮）
  * @param lineColor 竖线与圆点颜色
  * @param isDragging 拖拽中的行（编辑模式）
+ * @param isSelected 是否为当前选中站点（在地图上高亮跟随）
  * @param onClick 点击整行回调（为空则不可点击 = 只读展示）
  * @param trailing 行尾插槽（标签、删除按钮等）
  * @param content 站点文字内容
@@ -47,6 +48,7 @@ fun StationTimelineRow(
     modifier: Modifier = Modifier,
     lineColor: Color = MaterialTheme.colorScheme.primary,
     isDragging: Boolean = false,
+    isSelected: Boolean = false,
     onClick: (() -> Unit)? = null,
     trailing: @Composable RowScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit
@@ -58,9 +60,13 @@ fun StationTimelineRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(StationRowHeight)
+            .heightIn(min = StationRowHeight)
             .background(
-                if (isDragging) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
+                when {
+                    isSelected -> lineColor.copy(alpha = 0.12f)
+                    isDragging -> MaterialTheme.colorScheme.surfaceVariant
+                    else -> Color.Transparent
+                }
             )
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(end = 8.dp),
@@ -80,7 +86,7 @@ fun StationTimelineRow(
             if (isTransfer) {
                 Box(
                     modifier = Modifier
-                        .size(20.dp)
+                        .size(if (isSelected) 22.dp else 20.dp)
                         .clip(CircleShape)
                         .background(lineColor)
                         .border(3.dp, MaterialTheme.colorScheme.surface, CircleShape)
@@ -88,9 +94,9 @@ fun StationTimelineRow(
             } else {
                 Box(
                     modifier = Modifier
-                        .size(14.dp)
+                        .size(if (isSelected) 16.dp else 14.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surface)
+                        .background(if (isSelected) lineColor else MaterialTheme.colorScheme.surface)
                         .border(3.dp, lineColor, CircleShape)
                 )
             }

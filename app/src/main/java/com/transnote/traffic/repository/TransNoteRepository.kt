@@ -15,10 +15,20 @@ import com.transnote.traffic.data.database.MetroStationWithEntrances
 import com.transnote.traffic.data.file.BackupManager
 import com.transnote.traffic.data.file.BackupManager.BackupResult
 import com.transnote.traffic.data.file.ImageStorage
+import com.transnote.traffic.utils.CoordinateUtils
 import com.transnote.traffic.utils.SearchMatcher
 import com.transnote.traffic.utils.SearchResult
 import com.transnote.traffic.utils.SearchResultType
 import kotlinx.coroutines.flow.Flow
+
+/** 城市内已标注坐标的站点（用于地图内搜索与默认中心定位） */
+data class CityStation(
+    val name: String,
+    val latitude: Double,
+    val longitude: Double,
+    val subtitle: String,
+    val isMetro: Boolean
+)
 
 /**
  * 本地仓库层（TechDoc 第 3 节）：封装 Room 数据库操作 + 文件 IO。
@@ -46,6 +56,60 @@ class TransNoteRepository(
     suspend fun ensureDefaultCity(): Long {
         val cities = db.cityDao().getAllOnce()
         return cities.firstOrNull()?.cityId ?: db.cityDao().insert(CityEntity(cityName = "默认城市"))
+    }
+
+    /** 当前城市全部有坐标的站点（地图内搜索用），默认限定城市范围 */
+    suspend fun getCityStations(cityId: Long): List<CityStation> {
+        val busLineNames = db.busLineDao().getAllOnce()
+            .filter { it.cityId == cityId }
+            .associate { it.id to it.lineName }
+        val metroLineNames = db.metroLineDao().getAllOnce()
+            .filter { it.cityId == cityId }
+            .associate { it.id to it.lineName }
+
+        val result = mutableListOf<CityStation>()
+        db.busStationDao().getAllOnce()
+            .filter { it.lineId in busLineNames.keys && CoordinateUtils.isValid(it.latitude, it.longitude) }
+            .forEach {
+                result.add(
+                    CityStation(
+                        name = it.name,
+                        latitude = it.latitude!!,
+                        longitude = it.longitude!!,
+                        subtitle = "公交 · ${busLineNames[it.lineId].orEmpty()}",
+                        isMetro = false
+                    )
+                )
+            }
+        db.metroStationDao().getAllOnce()
+            .filter { it.lineId in metroLineNames.keys && CoordinateUtils.isValid(it.latitude, it.longitude) }
+            .forEach {
+                result.add(
+                    CityStation(
+                        name = it.name,
+                        latitude = it.latitude!!,
+                        longitude = it.longitude!!,
+                        subtitle = "地铁 · ${metroLineNames[it.lineId].orEmpty()}",
+                        isMetro = true
+                    )
+                )
+            }
+        return result
+    }
+
+    /** 城市中心（该城市所有已标注站点坐标的平均值），无数据返回 null */
+    suspend fun getCityCenter(cityId: Long): Pair<Double, Double>? {
+        val stations = getCityStations(cityId)
+        if (stations.isEmpty()) return null
+        return stations.map { it.latitude }.average() to stations.map { it.longitude }.average()
+    }
+
+    /** 地铁站点 id → 展示文本（如「2号线 · 人民广场」），用于公交站点的关联地铁信息 */
+    suspend fun getMetroStationLabels(): Map<Long, String> {
+        val lineNames = db.metroLineDao().getAllOnce().associate { it.id to it.lineName }
+        return db.metroStationDao().getAllOnce().associate {
+            it.id to "${lineNames[it.lineId] ?: "地铁"} · ${it.name}"
+        }
     }
 
     // ================= 公交线路 =================

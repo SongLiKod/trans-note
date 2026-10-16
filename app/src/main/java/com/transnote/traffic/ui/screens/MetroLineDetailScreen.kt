@@ -48,6 +48,7 @@ import com.transnote.traffic.ui.components.ConfirmDialog
 import com.transnote.traffic.ui.components.DragReorderColumn
 import com.transnote.traffic.ui.components.LabeledTextField
 import com.transnote.traffic.ui.components.MapPoint
+import com.transnote.traffic.ui.components.MapSearchItem
 import com.transnote.traffic.ui.components.SectionTitle
 import com.transnote.traffic.ui.components.StationTimelineRow
 import com.transnote.traffic.ui.components.StationTrackMap
@@ -82,6 +83,8 @@ fun MetroLineDetailScreen(
     var showBatchAdd by remember { mutableStateOf(false) }
     var confirmDeleteLine by remember { mutableStateOf(false) }
     var pendingDeleteStation by remember { mutableStateOf<Pair<Long, String>?>(null) }
+    // 点击站点后在下方地图上高亮跟随
+    var selectedKey by remember { mutableStateOf<Long?>(null) }
 
     Scaffold(
         topBar = {
@@ -191,10 +194,22 @@ fun MetroLineDetailScreen(
                     points = state.stations.mapNotNull { wrapper ->
                         val s = wrapper.station
                         if (CoordinateUtils.isValid(s.latitude, s.longitude)) {
-                            MapPoint(s.latitude!!, s.longitude!!, s.name, false)
+                            MapPoint(
+                                latitude = s.latitude!!,
+                                longitude = s.longitude!!,
+                                title = s.name,
+                                isTransfer = wrapper.entrances.isNotEmpty(),
+                                key = s.id
+                            )
                         } else null
                     },
-                    modifier = Modifier.fillMaxWidth().height(220.dp),
+                    modifier = Modifier.fillMaxWidth().height(240.dp),
+                    selectedKey = selectedKey,
+                    onSelectKey = { selectedKey = it },
+                    defaultCenter = state.mapContext.cityCenter,
+                    searchItems = state.mapContext.searchStations.map {
+                        MapSearchItem(it.name, it.latitude, it.longitude, it.subtitle)
+                    },
                     emptyHint = "为地铁站点设置地图坐标后将在此绘制轨迹"
                 )
             }
@@ -232,7 +247,7 @@ fun MetroLineDetailScreen(
                 SectionTitle("地铁站点（${state.stations.size}）")
                 Text(
                     if (editMode) "编辑中：点击站点可修改出入口，长按可拖拽排序"
-                    else "只读展示；点右上角「编辑」后可增删、拖拽或修改站点",
+                    else "只读展示；点击站点可在地图上定位高亮，点右上角「编辑」后可增删、拖拽或修改",
                     style = MaterialTheme.typography.bodySmall,
                     color = TransNoteTheme.colors.hintText
                 )
@@ -254,7 +269,9 @@ fun MetroLineDetailScreen(
                             wrapper = wrapper,
                             editMode = true,
                             isDragging = isDragging,
+                            isSelected = false,
                             onClick = { onOpenStation(wrapper.station.id) },
+                            onSelect = {},
                             onDelete = { pendingDeleteStation = wrapper.station.id to wrapper.station.name }
                         )
                     }
@@ -267,7 +284,9 @@ fun MetroLineDetailScreen(
                                 wrapper = wrapper,
                                 editMode = false,
                                 isDragging = false,
+                                isSelected = selectedKey == wrapper.station.id,
                                 onClick = { onOpenStation(wrapper.station.id) },
+                                onSelect = { selectedKey = wrapper.station.id },
                                 onDelete = {}
                             )
                         }
@@ -343,7 +362,7 @@ fun MetroLineDetailScreen(
     }
 }
 
-/** 地铁站点行（线路图圆点样式）。 */
+/** 地铁站点行（线路图圆点样式）。只读模式下点击可在地图定位高亮。 */
 @Composable
 private fun MetroStationTimelineItem(
     index: Int,
@@ -351,7 +370,9 @@ private fun MetroStationTimelineItem(
     wrapper: MetroStationWithEntrances,
     editMode: Boolean,
     isDragging: Boolean,
+    isSelected: Boolean,
     onClick: () -> Unit,
+    onSelect: () -> Unit,
     onDelete: () -> Unit
 ) {
     val station = wrapper.station
@@ -360,7 +381,8 @@ private fun MetroStationTimelineItem(
         total = total,
         isTransfer = wrapper.entrances.isNotEmpty(),
         isDragging = isDragging,
-        onClick = if (editMode) onClick else null,
+        isSelected = isSelected,
+        onClick = if (editMode) onClick else onSelect,
         trailing = {
             if (editMode) {
                 Icon(

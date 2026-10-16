@@ -7,6 +7,7 @@ import com.transnote.traffic.data.database.BusStationEntity
 import com.transnote.traffic.data.database.BusStationWithTransfers
 import com.transnote.traffic.data.database.MetroLineEntity
 import com.transnote.traffic.data.database.MetroStationWithEntrances
+import com.transnote.traffic.repository.CityStation
 import com.transnote.traffic.repository.TransNoteRepository
 import com.transnote.traffic.utils.DragReorder
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -19,15 +20,24 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+/** 线路地图上下文：默认城市中心 + 城市内站点（地图搜索）*/
+data class LineMapContext(
+    val cityCenter: Pair<Double, Double>? = null,
+    val searchStations: List<CityStation> = emptyList(),
+    val metroStationLabels: Map<Long, String> = emptyMap()
+)
+
 data class BusLineDetailUiState(
     val line: BusLineEntity? = null,
     val direction: Int = BusStationEntity.DIRECTION_UP,
-    val stations: List<BusStationWithTransfers> = emptyList()
+    val stations: List<BusStationWithTransfers> = emptyList(),
+    val mapContext: LineMapContext = LineMapContext()
 )
 
 data class MetroLineDetailUiState(
     val line: MetroLineEntity? = null,
-    val stations: List<MetroStationWithEntrances> = emptyList()
+    val stations: List<MetroStationWithEntrances> = emptyList(),
+    val mapContext: LineMapContext = LineMapContext()
 )
 
 /**
@@ -43,16 +53,28 @@ class BusLineDetailViewModel(
     val direction = MutableStateFlow(BusStationEntity.DIRECTION_UP)
 
     private val lineFlow = repo.observeBusLine(lineId)
+    private val mapContext = MutableStateFlow(LineMapContext())
 
     val uiState: StateFlow<BusLineDetailUiState> = combine(
-        lineFlow, direction
-    ) { line, dir -> line to dir }
-        .flatMapLatest { (line, dir) ->
+        lineFlow, direction, mapContext
+    ) { line, dir, ctx -> Triple(line, dir, ctx) }
+        .flatMapLatest { (line, dir, ctx) ->
             repo.observeBusStationsWithTransfers(lineId, dir).map { list ->
-                BusLineDetailUiState(line = line, direction = dir, stations = list)
+                BusLineDetailUiState(line = line, direction = dir, stations = list, mapContext = ctx)
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BusLineDetailUiState())
+
+    init {
+        viewModelScope.launch {
+            val line = repo.getBusLine(lineId) ?: return@launch
+            mapContext.value = LineMapContext(
+                cityCenter = repo.getCityCenter(line.cityId),
+                searchStations = repo.getCityStations(line.cityId),
+                metroStationLabels = repo.getMetroStationLabels()
+            )
+        }
+    }
 
     fun setDirection(value: Int) {
         direction.value = value
@@ -112,12 +134,25 @@ class MetroLineDetailViewModel(
     private val lineId: Long
 ) : ViewModel() {
 
-    val uiState: StateFlow<MetroLineDetailUiState> = kotlinx.coroutines.flow.combine(
+    private val mapContext = MutableStateFlow(LineMapContext())
+
+    val uiState: StateFlow<MetroLineDetailUiState> = combine(
         repo.observeMetroLine(lineId),
-        repo.observeMetroStationsWithEntrances(lineId)
-    ) { line, stations ->
-        MetroLineDetailUiState(line = line, stations = stations)
+        repo.observeMetroStationsWithEntrances(lineId),
+        mapContext
+    ) { line, stations, ctx ->
+        MetroLineDetailUiState(line = line, stations = stations, mapContext = ctx)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MetroLineDetailUiState())
+
+    init {
+        viewModelScope.launch {
+            val line = repo.getMetroLine(lineId) ?: return@launch
+            mapContext.value = LineMapContext(
+                cityCenter = repo.getCityCenter(line.cityId),
+                searchStations = repo.getCityStations(line.cityId)
+            )
+        }
+    }
 
     fun addStation(name: String) {
         if (name.isBlank()) return

@@ -11,12 +11,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DirectionsSubway
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
@@ -34,6 +36,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,6 +54,7 @@ import com.transnote.traffic.ui.components.ConfirmDialog
 import com.transnote.traffic.ui.components.DragReorderColumn
 import com.transnote.traffic.ui.components.LabeledTextField
 import com.transnote.traffic.ui.components.MapPoint
+import com.transnote.traffic.ui.components.MapSearchItem
 import com.transnote.traffic.ui.components.SectionTitle
 import com.transnote.traffic.ui.components.StationTimelineRow
 import com.transnote.traffic.ui.components.StationTrackMap
@@ -58,6 +62,7 @@ import com.transnote.traffic.ui.components.TimetableContent
 import com.transnote.traffic.ui.components.TransferTag
 import com.transnote.traffic.ui.components.TransNoteCard
 import com.transnote.traffic.ui.components.TransNoteTopBar
+import com.transnote.traffic.ui.components.ThemedDivider
 import com.transnote.traffic.ui.theme.TransNoteTheme
 import com.transnote.traffic.utils.CoordinateUtils
 import com.transnote.traffic.viewmodel.BusLineDetailViewModel
@@ -87,6 +92,10 @@ fun BusLineDetailScreen(
     var showBatchAdd by remember { mutableStateOf(false) }
     var confirmDeleteLine by remember { mutableStateOf(false) }
     var pendingDeleteStation by remember { mutableStateOf<BusStationEntity?>(null) }
+    // 点击站点后在下方地图上高亮跟随
+    var selectedKey by remember { mutableStateOf<Long?>(null) }
+
+    LaunchedEffect(state.direction) { selectedKey = null }
 
     Scaffold(
         topBar = {
@@ -214,6 +223,55 @@ fun BusLineDetailScreen(
             }
 
             item {
+                val transferEntrances = state.stations
+                    .flatMap { it.entrances }
+                    .distinctBy { it.metroStationId to it.name }
+                if (transferEntrances.isNotEmpty()) {
+                    SectionTitle("沿线可换乘地铁")
+                    TransNoteCard {
+                        Column {
+                            transferEntrances.forEachIndexed { i, entrance ->
+                                if (i > 0) {
+                                    Spacer(Modifier.height(6.dp))
+                                    ThemedDivider()
+                                    Spacer(Modifier.height(6.dp))
+                                }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onOpenEntrance(entrance.metroStationId, entrance.id) }
+                                        .padding(vertical = 2.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Filled.DirectionsSubway,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        state.mapContext.metroStationLabels[entrance.metroStationId]
+                                            ?: "地铁站",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        entrance.name,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TransNoteTheme.colors.hintText
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
                 SectionTitle("线路轨迹")
                 StationTrackMap(
                     points = state.stations.mapNotNull { wrapper ->
@@ -223,11 +281,18 @@ fun BusLineDetailScreen(
                                 latitude = s.latitude!!,
                                 longitude = s.longitude!!,
                                 title = s.name,
-                                isTransfer = s.isMetroTransfer
+                                isTransfer = s.isMetroTransfer,
+                                key = s.id
                             )
                         } else null
                     },
-                    modifier = Modifier.fillMaxWidth().height(220.dp)
+                    modifier = Modifier.fillMaxWidth().height(240.dp),
+                    selectedKey = selectedKey,
+                    onSelectKey = { selectedKey = it },
+                    defaultCenter = state.mapContext.cityCenter,
+                    searchItems = state.mapContext.searchStations.map {
+                        MapSearchItem(it.name, it.latitude, it.longitude, it.subtitle)
+                    }
                 )
             }
 
@@ -264,7 +329,7 @@ fun BusLineDetailScreen(
                 SectionTitle("站点列表（${state.stations.size}）")
                 Text(
                     if (editMode) "编辑中：点击站点可修改，长按可拖拽排序"
-                    else "只读展示；点右上角「编辑」后可增删、拖拽或修改站点",
+                    else "只读展示；点击站点可在地图上定位高亮，点右上角「编辑」后可增删、拖拽或修改",
                     style = MaterialTheme.typography.bodySmall,
                     color = TransNoteTheme.colors.hintText
                 )
@@ -289,7 +354,10 @@ fun BusLineDetailScreen(
                             wrapper = wrapper,
                             editMode = true,
                             isDragging = isDragging,
+                            isSelected = false,
+                            metroStationLabels = state.mapContext.metroStationLabels,
                             onClick = { onOpenStation(wrapper.station.id) },
+                            onSelect = {},
                             onDelete = { pendingDeleteStation = wrapper.station },
                             onOpenEntrance = onOpenEntrance
                         )
@@ -303,7 +371,10 @@ fun BusLineDetailScreen(
                                 wrapper = wrapper,
                                 editMode = false,
                                 isDragging = false,
+                                isSelected = selectedKey == wrapper.station.id,
+                                metroStationLabels = state.mapContext.metroStationLabels,
                                 onClick = { onOpenStation(wrapper.station.id) },
+                                onSelect = { selectedKey = wrapper.station.id },
                                 onDelete = {},
                                 onOpenEntrance = onOpenEntrance
                             )
@@ -382,7 +453,7 @@ fun BusLineDetailScreen(
 
 /**
  * 公交站点行（线路图圆点样式）。
- * 只读模式下仅展示；编辑模式下显示拖拽手柄与删除按钮。
+ * 只读模式下点击可在地图上定位高亮；编辑模式下显示拖拽手柄与删除按钮。
  */
 @Composable
 private fun BusStationTimelineItem(
@@ -391,7 +462,10 @@ private fun BusStationTimelineItem(
     wrapper: BusStationWithTransfers,
     editMode: Boolean,
     isDragging: Boolean,
+    isSelected: Boolean,
+    metroStationLabels: Map<Long, String>,
     onClick: () -> Unit,
+    onSelect: () -> Unit,
     onDelete: () -> Unit,
     onOpenEntrance: (Long, Long) -> Unit
 ) {
@@ -401,7 +475,8 @@ private fun BusStationTimelineItem(
         total = total,
         isTransfer = station.isMetroTransfer,
         isDragging = isDragging,
-        onClick = if (editMode) onClick else null,
+        isSelected = isSelected,
+        onClick = if (editMode) onClick else onSelect,
         trailing = {
             if (editMode) {
                 Icon(
@@ -430,14 +505,7 @@ private fun BusStationTimelineItem(
             )
             if (station.isMetroTransfer) {
                 Spacer(Modifier.width(8.dp))
-                TransferTag(
-                    modifier = Modifier.clickableTag {
-                        val entrance = wrapper.entrances.singleOrNull()
-                        if (entrance != null) {
-                            onOpenEntrance(entrance.metroStationId, entrance.id)
-                        }
-                    }
-                )
+                TransferTag()
             }
         }
         val sub = buildList {
@@ -455,8 +523,31 @@ private fun BusStationTimelineItem(
                 overflow = TextOverflow.Ellipsis
             )
         }
+        // 关联地铁信息：换乘的地铁线路 / 站点 / 出入口
+        wrapper.entrances.forEach { entrance ->
+            Spacer(Modifier.height(2.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clickable {
+                    onOpenEntrance(entrance.metroStationId, entrance.id)
+                }
+            ) {
+                Icon(
+                    Icons.Filled.DirectionsSubway,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    "换乘 ${metroStationLabels[entrance.metroStationId] ?: "地铁站"} · ${entrance.name}口",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
     }
 }
 
-private fun Modifier.clickableTag(onClick: () -> Unit): Modifier =
-    this.clickable(onClick = onClick)

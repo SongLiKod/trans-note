@@ -1,5 +1,7 @@
 package com.transnote.traffic.ui.screens
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,16 +11,21 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.LocationCity
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +53,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.transnote.traffic.AppContainer
 import com.transnote.traffic.data.database.BusStationEntity
+import com.transnote.traffic.data.database.CityEntity
 import com.transnote.traffic.ui.components.DragReorderColumn
 import com.transnote.traffic.ui.components.LabeledTextField
 import com.transnote.traffic.ui.components.SectionTitle
@@ -145,6 +153,12 @@ fun LineEditScreen(
                         "线路类型：${lineType.label}",
                         style = MaterialTheme.typography.bodySmall,
                         color = TransNoteTheme.colors.hintText
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    CitySelector(
+                        cities = state.cities,
+                        selectedId = state.selectedCityId,
+                        onSelect = viewModel::setCityId
                     )
                     Spacer(Modifier.height(8.dp))
                     LabeledTextField(
@@ -420,5 +434,65 @@ fun LineEditScreen(
                 }
             }
         )
+    }
+}
+
+/** 所属城市选择器：新增 / 编辑线路时可切换归属城市 */
+@Composable
+private fun CitySelector(
+    cities: List<CityEntity>,
+    selectedId: Long,
+    onSelect: (Long) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val name = cities.firstOrNull { it.cityId == selectedId }?.cityName ?: "默认城市"
+
+    Column {
+        Text(
+            "所属城市",
+            style = MaterialTheme.typography.bodySmall,
+            color = TransNoteTheme.colors.hintText
+        )
+        Spacer(Modifier.height(4.dp))
+        Box {
+            Surface(
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, TransNoteTheme.colors.divider),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = true }
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp)
+                ) {
+                    Icon(
+                        Icons.Filled.LocationCity,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    Icon(
+                        Icons.Filled.ArrowDropDown,
+                        contentDescription = "选择城市",
+                        tint = TransNoteTheme.colors.hintText
+                    )
+                }
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                cities.forEach { city ->
+                    DropdownMenuItem(
+                        text = { Text(city.cityName) },
+                        onClick = {
+                            onSelect(city.cityId)
+                            expanded = false
+                        }
+                    )
+                }
+            }
+        }
     }
 }

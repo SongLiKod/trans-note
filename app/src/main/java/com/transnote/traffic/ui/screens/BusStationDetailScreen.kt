@@ -344,7 +344,8 @@ fun BusStationDetailScreen(
             initialLatitude = editor.latitude,
             initialLongitude = editor.longitude,
             onConfirm = { lat, lng -> viewModel.setCoordinate(lat, lng) },
-            onDismiss = { showMapPicker = false }
+            onDismiss = { showMapPicker = false },
+            defaultCenter = editor.cityCenter
         )
     }
 
