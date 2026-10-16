@@ -1,5 +1,6 @@
 package com.transnote.traffic.utils
 
+import kotlin.math.abs
 import kotlin.math.asin
 import kotlin.math.cos
 import kotlin.math.min
@@ -8,11 +9,17 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * 坐标工具（TechDoc 5.3 / 5.4）：经纬度计算、地图边界、距离估算。
+ * 坐标工具（TechDoc 5.3 / 5.4）：经纬度计算、地图边界、距离估算，
+ * 以及 WGS-84 ↔ GCJ-02 坐标转换（高德瓦片使用 GCJ-02 坐标系）。
  */
 object CoordinateUtils {
 
     private const val EARTH_RADIUS_M = 6_371_000.0
+
+    // ---- GCJ-02（火星坐标）转换常量 ----
+    private const val PI = 3.14159265358979324
+    private const val AXIS = 6378245.0
+    private const val EE = 0.00669342162296594323
 
     /** 两点球面距离（米） */
     fun distanceMeters(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
@@ -33,9 +40,7 @@ object CoordinateUtils {
             lat in -90.0..90.0 && lng in -180.0..180.0 &&
             !(lat == 0.0 && lng == 0.0)
 
-    /**
-     * 轨迹中点（用于地图自动缩放）
-     */
+    /** 轨迹中点（用于地图自动缩放） */
     fun centerOf(points: List<Pair<Double, Double>>): Pair<Double, Double>? {
         if (points.isEmpty()) return null
         return points.map { it.first }.average() to points.map { it.second }.average()
@@ -45,4 +50,53 @@ object CoordinateUtils {
     fun format(lat: Double?, lng: Double?): String =
         if (isValid(lat, lng)) String.format(java.util.Locale.CHINA, "%.6f, %.6f", lat, lng)
         else "未设置坐标"
+
+    // ================= WGS-84 ↔ GCJ-02 =================
+
+    /** 粗略判断是否在中国大陆范围之外（境外不做偏移） */
+    private fun outOfChina(lat: Double, lng: Double): Boolean =
+        lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271
+
+    private fun transformLat(x: Double, y: Double): Double {
+        var ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * sqrt(abs(x))
+        ret += (20.0 * sin(6.0 * x * PI) + 20.0 * sin(2.0 * x * PI)) * 2.0 / 3.0
+        ret += (20.0 * sin(y * PI) + 40.0 * sin(y / 3.0 * PI)) * 2.0 / 3.0
+        ret += (160.0 * sin(y / 12.0 * PI) + 320.0 * sin(y * PI / 30.0)) * 2.0 / 3.0
+        return ret
+    }
+
+    private fun transformLng(x: Double, y: Double): Double {
+        var ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * sqrt(abs(x))
+        ret += (20.0 * sin(6.0 * x * PI) + 20.0 * sin(2.0 * x * PI)) * 2.0 / 3.0
+        ret += (20.0 * sin(x * PI) + 40.0 * sin(x / 3.0 * PI)) * 2.0 / 3.0
+        ret += (150.0 * sin(x / 12.0 * PI) + 300.0 * sin(x / 30.0 * PI)) * 2.0 / 3.0
+        return ret
+    }
+
+    /** WGS-84（GPS 原始坐标） → GCJ-02（高德瓦片坐标） */
+    fun wgs84ToGcj02(lat: Double, lng: Double): Pair<Double, Double> {
+        if (outOfChina(lat, lng)) return lat to lng
+        var dLat = transformLat(lng - 105.0, lat - 35.0)
+        var dLng = transformLng(lng - 105.0, lat - 35.0)
+        val radLat = lat / 180.0 * PI
+        var magic = sin(radLat)
+        magic = 1 - EE * magic * magic
+        val sqrtMagic = sqrt(magic)
+        dLat = (dLat * 180.0) / ((AXIS * (1 - EE)) / (magic * sqrtMagic) * PI)
+        dLng = (dLng * 180.0) / (AXIS / sqrtMagic * cos(radLat) * PI)
+        return (lat + dLat) to (lng + dLng)
+    }
+
+    /** GCJ-02（高德瓦片坐标） → WGS-84（GPS 原始坐标），迭代逼近 */
+    fun gcj02ToWgs84(lat: Double, lng: Double): Pair<Double, Double> {
+        if (outOfChina(lat, lng)) return lat to lng
+        var wLat = lat
+        var wLng = lng
+        repeat(30) {
+            val (gLat, gLng) = wgs84ToGcj02(wLat, wLng)
+            wLat += lat - gLat
+            wLng += lng - gLng
+        }
+        return wLat to wLng
+    }
 }

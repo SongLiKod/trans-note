@@ -18,14 +18,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.transnote.traffic.ui.theme.TransNoteTheme
+import com.transnote.traffic.utils.CoordinateUtils
+import com.transnote.traffic.utils.GaodeTileSource
 import org.osmdroid.events.MapEventsReceiver
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
@@ -59,12 +60,12 @@ fun StationTrackMap(
 
     val mapView = remember {
         MapView(context).apply {
-            setTileSource(TileSourceFactory.MAPNIK)
+            setTileSource(GaodeTileSource())
             setMultiTouchControls(true)
             setUseDataConnection(true)
             setTilesScaledToDpi(true)
             minZoomLevel = 3.0
-            maxZoomLevel = 19.0
+            maxZoomLevel = 18.0
         }
     }
 
@@ -95,7 +96,11 @@ fun StationTrackMap(
             modifier = Modifier.fillMaxSize(),
             update = { map ->
                 map.overlays.clear()
-                val geoPoints = points.map { GeoPoint(it.latitude, it.longitude) }
+                // 高德瓦片为 GCJ-02，站点存的是 WGS-84，显示前统一转换
+                val geoPoints = points.map { p ->
+                    val (lat, lng) = CoordinateUtils.wgs84ToGcj02(p.latitude, p.longitude)
+                    GeoPoint(lat, lng)
+                }
 
                 if (drawTrack && geoPoints.size >= 2) {
                     val polyline = Polyline(map).apply {
@@ -108,8 +113,9 @@ fun StationTrackMap(
                 }
 
                 points.forEach { point ->
+                    val (lat, lng) = CoordinateUtils.wgs84ToGcj02(point.latitude, point.longitude)
                     val marker = Marker(map).apply {
-                        position = GeoPoint(point.latitude, point.longitude)
+                        position = GeoPoint(lat, lng)
                         title = point.title
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                     }
@@ -172,13 +178,18 @@ fun LocationPickerMap(
         )
     }
     val initialPoint = remember {
-        if (initialLatitude != null && initialLongitude != null) GeoPoint(initialLatitude, initialLongitude)
-        else GeoPoint(39.9087, 116.3975)
+        val base = if (initialLatitude != null && initialLongitude != null) {
+            initialLatitude to initialLongitude
+        } else {
+            39.9087 to 116.3975
+        }
+        val (lat, lng) = CoordinateUtils.wgs84ToGcj02(base.first, base.second)
+        GeoPoint(lat, lng)
     }
 
     val mapView = remember {
         MapView(context).apply {
-            setTileSource(TileSourceFactory.MAPNIK)
+            setTileSource(GaodeTileSource())
             setMultiTouchControls(true)
             setUseDataConnection(true)
             setTilesScaledToDpi(true)
@@ -216,8 +227,10 @@ fun LocationPickerMap(
                     MapEventsOverlay(object : MapEventsReceiver {
                         override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
                             if (p != null) {
-                                current = p.latitude to p.longitude
-                                onPick(p.latitude, p.longitude)
+                                // 高德瓦片返回 GCJ-02，转回 WGS-84 存储
+                                val (lat, lng) = CoordinateUtils.gcj02ToWgs84(p.latitude, p.longitude)
+                                current = lat to lng
+                                onPick(lat, lng)
                             }
                             return true
                         }
@@ -227,8 +240,9 @@ fun LocationPickerMap(
                 )
 
                 current?.let { (lat, lng) ->
+                    val (gLat, gLng) = CoordinateUtils.wgs84ToGcj02(lat, lng)
                     val marker = Marker(map).apply {
-                        position = GeoPoint(lat, lng)
+                        position = GeoPoint(gLat, gLng)
                         title = "已选位置"
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                     }

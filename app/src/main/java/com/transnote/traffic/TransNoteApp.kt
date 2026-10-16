@@ -35,8 +35,8 @@ class TransNoteApp : Application() {
         // 使用 App 私有目录存放瓦片缓存，无需外部存储权限
         config.osmdroidBasePath = cacheDir.resolve("osmdroid")
         config.osmdroidTileCache = cacheDir.resolve("osmdroid/tiles")
-        // 显式设置 UA，避免被公共瓦片服务拒绝
-        config.userAgentValue = packageName
+        // 显式设置 UA，避免被瓦片服务拒绝
+        config.userAgentValue = "TransNote/1.0 ($packageName)"
         config.save(this, prefs)
     }
 }
