@@ -1,7 +1,9 @@
 package com.transnote.traffic.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -54,6 +57,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
@@ -130,6 +134,28 @@ fun TransferTag(modifier: Modifier = Modifier) {
         icon = Icons.Filled.DirectionsSubway,
         modifier = modifier
     )
+}
+
+/**
+ * 换乘站两线颜色徽标：圆形左半为当前线路色、右半为换乘线路色
+ * （参照 docs/temp/pic1、pic2 的地铁换乘图标样式）。
+ */
+@Composable
+fun TransferColorBadge(
+    firstColor: Color,
+    secondColor: Color,
+    modifier: Modifier = Modifier,
+    size: Dp = 20.dp
+) {
+    Canvas(
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .border(1.dp, MaterialTheme.colorScheme.surface, CircleShape)
+    ) {
+        drawArc(firstColor, startAngle = 90f, sweepAngle = 180f, useCenter = true, size = this.size)
+        drawArc(secondColor, startAngle = 270f, sweepAngle = 180f, useCenter = true, size = this.size)
+    }
 }
 
 /** 空态占位 */

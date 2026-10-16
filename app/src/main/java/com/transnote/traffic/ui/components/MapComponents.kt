@@ -163,6 +163,15 @@ private class TrackOverlay(
 
     var highlightKey: Long? = null
 
+    /**
+     * 站点坐标预转换：WGS-84（本地存储）→ GCJ-02（高德瓦片坐标系）。
+     * 否则圆点/连线会与地图实际位置偏移数百米，导致「列表点的站点」和「地图上的点」不重合。
+     */
+    private val geoPoints: List<GeoPoint> = stations.map {
+        val (lat, lng) = CoordinateUtils.wgs84ToGcj02(it.latitude, it.longitude)
+        GeoPoint(lat, lng)
+    }
+
     /** 站点圆点颜色：优先使用站点自定义色，其次换乘警示色，最后线路圆点色 */
     private fun dotColorOf(station: MapPoint): Int {
         val hex = station.colorHex.trim()
@@ -178,7 +187,7 @@ private class TrackOverlay(
         if (shadow || stations.isEmpty()) return
         val density = mapView.resources.displayMetrics.density
         val projection = mapView.projection
-        val pts = stations.map { projection.toPixels(GeoPoint(it.latitude, it.longitude), null) }
+        val pts = geoPoints.map { projection.toPixels(it, null) }
 
         // ---- 轨迹线（粗细来自线路图样式设置）----
         if (drawTrack && pts.size >= 2) {
@@ -284,8 +293,8 @@ private class TrackOverlay(
         val projection = mapView.projection
         var bestKey: Long? = null
         var bestDist = Float.MAX_VALUE
-        stations.forEach { station ->
-            val p = projection.toPixels(GeoPoint(station.latitude, station.longitude), null)
+        stations.forEachIndexed { i, station ->
+            val p = projection.toPixels(geoPoints[i], null)
             val dist = hypot(e.x - p.x, e.y - p.y)
             if (dist < threshold && dist < bestDist) {
                 bestDist = dist

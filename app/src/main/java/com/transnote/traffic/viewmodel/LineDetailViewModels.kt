@@ -10,6 +10,7 @@ import com.transnote.traffic.data.database.MetroStationWithEntrances
 import com.transnote.traffic.data.database.StationMarkerEntity
 import com.transnote.traffic.repository.BusStationInput
 import com.transnote.traffic.repository.CityStation
+import com.transnote.traffic.repository.MetroTransferLine
 import com.transnote.traffic.repository.TransNoteRepository
 import com.transnote.traffic.utils.AmapApi
 import com.transnote.traffic.utils.AmapBusLine
@@ -231,6 +232,10 @@ class MetroLineDetailViewModel(
 
     private val mapContext = MutableStateFlow(LineMapContext())
 
+    /** 站点 id → 可换乘的其它地铁线路（用于换乘站两线颜色徽标） */
+    private val _transfers = MutableStateFlow<Map<Long, List<MetroTransferLine>>>(emptyMap())
+    val transfers: StateFlow<Map<Long, List<MetroTransferLine>>> = _transfers.asStateFlow()
+
     val uiState: StateFlow<MetroLineDetailUiState> = combine(
         repo.observeMetroLine(lineId),
         mapContext,
@@ -249,6 +254,7 @@ class MetroLineDetailViewModel(
 
     init {
         viewModelScope.launch {
+            _transfers.value = repo.getMetroTransferMap()
             val line = repo.getMetroLine(lineId) ?: return@launch
             mapContext.value = LineMapContext(
                 cityCenter = repo.getCityCenter(line.cityId),

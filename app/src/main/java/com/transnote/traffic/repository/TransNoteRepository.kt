@@ -33,6 +33,13 @@ data class BusStationInput(
     val markerNames: List<String> = emptyList()
 )
 
+/** 地铁换乘线路（用于换乘站展示两条线路的颜色，参照 docs/temp/pic1、pic2） */
+data class MetroTransferLine(
+    val lineId: Long,
+    val lineName: String,
+    val colorHex: String
+)
+
 /** 经过某站点的公交线路（用于「该站点有哪些线路经过」） */
 data class PassingBusLine(
     val lineId: Long,
@@ -231,6 +238,34 @@ class TransNoteRepository(
             }
             .distinctBy { it.lineId to it.direction }
             .sortedWith(compareBy({ it.lineName }, { it.direction }))
+    }
+
+    /**
+     * 每个地铁站点可换乘的其它地铁线路（跨线路聚合，用于换乘站显示两条线颜色）。
+     * 同站判定：坐标距离很近（≤100m），或站名归一化后相同且距离较近（≤500m）。
+     */
+    suspend fun getMetroTransferMap(): Map<Long, List<MetroTransferLine>> {
+        val lineById = db.metroLineDao().getAllOnce().associateBy { it.id }
+        val stations = db.metroStationDao().getAllOnce()
+            .filter { CoordinateUtils.isValid(it.latitude, it.longitude) }
+        val result = mutableMapOf<Long, List<MetroTransferLine>>()
+        stations.forEach { station ->
+            val others = stations.filter { other ->
+                other.id != station.id && other.lineId != station.lineId && run {
+                    val d = CoordinateUtils.distanceMeters(
+                        station.latitude!!, station.longitude!!,
+                        other.latitude!!, other.longitude!!
+                    )
+                    d <= 100.0 || (normalizeStationName(other.name) == normalizeStationName(station.name) && d <= 500.0)
+                }
+            }.mapNotNull { other ->
+                lineById[other.lineId]?.let {
+                    MetroTransferLine(it.id, it.lineName, it.colorHex.ifBlank { "#2563EB" })
+                }
+            }.distinctBy { it.lineId }
+            if (others.isNotEmpty()) result[station.id] = others
+        }
+        return result
     }
 
     /** 城市中心（该城市所有已标注站点坐标的平均值），无数据返回 null */

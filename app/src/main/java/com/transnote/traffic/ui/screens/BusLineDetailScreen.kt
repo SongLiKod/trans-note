@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -50,7 +49,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,10 +84,6 @@ import com.transnote.traffic.utils.CoordinateUtils
 import com.transnote.traffic.utils.StationNameParser
 import com.transnote.traffic.viewmodel.BusLineDetailViewModel
 import com.transnote.traffic.viewmodel.containerViewModelFactory
-import kotlinx.coroutines.launch
-
-/** 线路轨迹地图在列表中的固定项下标，用于点击站点时把地图滚动到可见位置 */
-private const val MAP_ITEM_INDEX = 3
 
 /**
  * 公交线路详情页（PRD 3.2）：
@@ -128,15 +122,8 @@ fun BusLineDetailScreen(
     var showBatchAdd by remember { mutableStateOf(false) }
     var confirmDeleteLine by remember { mutableStateOf(false) }
     var pendingDeleteStation by remember { mutableStateOf<BusStationEntity?>(null) }
-    // 点击站点后在地图上高亮跟随
+    // 点击站点后在（固定在底部的）地图上高亮并居中
     var selectedKey by remember { mutableStateOf<Long?>(null) }
-    val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
-    // 点击站点：高亮该站并把地图滚动到可见位置（地图居中显示该站）
-    val selectStation: (Long) -> Unit = { id ->
-        selectedKey = id
-        scope.launch { listState.animateScrollToItem(MAP_ITEM_INDEX) }
-    }
 
     LaunchedEffect(state.direction) { selectedKey = null }
 
@@ -214,9 +201,9 @@ fun BusLineDetailScreen(
             )
         }
     ) { padding ->
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
         LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize().padding(padding),
+            modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -331,34 +318,6 @@ fun BusLineDetailScreen(
                 }
             }
 
-            item {
-                SectionTitle("线路轨迹")
-                StationTrackMap(
-                    points = state.stations.mapNotNull { wrapper ->
-                        val s = wrapper.station
-                        if (CoordinateUtils.isValid(s.latitude, s.longitude)) {
-                            MapPoint(
-                                latitude = s.latitude!!,
-                                longitude = s.longitude!!,
-                                title = s.name,
-                                isTransfer = s.isMetroTransfer,
-                                key = s.id,
-                                colorHex = s.colorHex,
-                                markers = state.mapContext.markerNames(s.markerIds)
-                            )
-                        } else null
-                    },
-                    modifier = Modifier.fillMaxWidth().height(240.dp),
-                    selectedKey = selectedKey,
-                    onSelectKey = { selectedKey = it },
-                    defaultCenter = state.mapContext.cityCenter,
-                    searchItems = state.mapContext.searchStations.map {
-                        MapSearchItem(it.name, it.latitude, it.longitude, it.subtitle, it.markers)
-                    },
-                    lineColor = lineColor
-                )
-            }
-
             if (editMode) {
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -448,7 +407,7 @@ fun BusLineDetailScreen(
                                 markers = state.mapContext.markers,
                                 metroStationLabels = state.mapContext.metroStationLabels,
                                 onClick = { onOpenStation(wrapper.station.id) },
-                                onSelect = { selectStation(wrapper.station.id) },
+                                onSelect = { selectedKey = wrapper.station.id },
                                 onDelete = {},
                                 onShowPassing = { passingStation = wrapper.station },
                                 onOpenEntrance = onOpenEntrance
@@ -459,6 +418,35 @@ fun BusLineDetailScreen(
             }
 
             item { Spacer(Modifier.height(24.dp)) }
+        }
+        // 固定在底部的线路轨迹地图：始终可见、可拖动缩放；点击站点时居中该站
+        StationTrackMap(
+            points = state.stations.mapNotNull { wrapper ->
+                val s = wrapper.station
+                if (CoordinateUtils.isValid(s.latitude, s.longitude)) {
+                    MapPoint(
+                        latitude = s.latitude!!,
+                        longitude = s.longitude!!,
+                        title = s.name,
+                        isTransfer = s.isMetroTransfer,
+                        key = s.id,
+                        colorHex = s.colorHex,
+                        markers = state.mapContext.markerNames(s.markerIds)
+                    )
+                } else null
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(220.dp)
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            selectedKey = selectedKey,
+            onSelectKey = { selectedKey = it },
+            defaultCenter = state.mapContext.cityCenter,
+            searchItems = state.mapContext.searchStations.map {
+                MapSearchItem(it.name, it.latitude, it.longitude, it.subtitle, it.markers)
+            },
+            lineColor = lineColor
+        )
         }
     }
 
@@ -788,15 +776,15 @@ private fun BusStationTimelineItem(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false)
             )
+            // 站点标记（多选）与换乘标签同行显示，避免占用额外一行
+            if (markerNames.isNotEmpty()) {
+                Spacer(Modifier.width(6.dp))
+                MarkerIconRow(names = markerNames, accent = lineColor, max = 4, iconSize = 18.dp)
+            }
             if (station.isMetroTransfer) {
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(6.dp))
                 TransferTag()
             }
-        }
-        // 站点标记（多选），显示在线路上
-        if (markerNames.isNotEmpty()) {
-            Spacer(Modifier.height(4.dp))
-            MarkerIconRow(names = markerNames, accent = lineColor)
         }
         val sub = buildList {
             if (station.note.isNotBlank()) add(station.note)

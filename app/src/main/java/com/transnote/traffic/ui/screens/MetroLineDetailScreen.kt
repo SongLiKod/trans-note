@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -36,7 +35,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,6 +46,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.transnote.traffic.AppContainer
 import com.transnote.traffic.data.database.MetroStationWithEntrances
 import com.transnote.traffic.data.database.StationMarkerEntity
+import com.transnote.traffic.repository.MetroTransferLine
 import com.transnote.traffic.ui.components.ConfirmDialog
 import com.transnote.traffic.ui.components.DragReorderColumn
 import com.transnote.traffic.ui.components.LabeledTextField
@@ -59,6 +58,7 @@ import com.transnote.traffic.ui.components.StationTimelineRow
 import com.transnote.traffic.ui.components.StationTrackMap
 import com.transnote.traffic.ui.components.Tag
 import com.transnote.traffic.ui.components.TimetableContent
+import com.transnote.traffic.ui.components.TransferColorBadge
 import com.transnote.traffic.ui.components.TransNoteCard
 import com.transnote.traffic.ui.components.TransNoteTopBar
 import com.transnote.traffic.ui.theme.LineColors
@@ -67,10 +67,6 @@ import com.transnote.traffic.utils.CoordinateUtils
 import com.transnote.traffic.utils.StationNameParser
 import com.transnote.traffic.viewmodel.MetroLineDetailViewModel
 import com.transnote.traffic.viewmodel.containerViewModelFactory
-import kotlinx.coroutines.launch
-
-/** 线路轨迹地图在列表中的固定项下标，用于点击站点时把地图滚动到可见位置 */
-private const val MAP_ITEM_INDEX = 2
 
 /**
  * 地铁线路详情页（PRD 3.3）：以线路图（竖线 + 站点圆点）展示站点与出入口数量，
@@ -97,14 +93,9 @@ fun MetroLineDetailScreen(
     var showBatchAdd by remember { mutableStateOf(false) }
     var confirmDeleteLine by remember { mutableStateOf(false) }
     var pendingDeleteStation by remember { mutableStateOf<Pair<Long, String>?>(null) }
-    // 点击站点后在地图上高亮跟随
+    // 点击站点后在（固定在底部的）地图上高亮并居中
     var selectedKey by remember { mutableStateOf<Long?>(null) }
-    val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
-    val selectStation: (Long) -> Unit = { id ->
-        selectedKey = id
-        scope.launch { listState.animateScrollToItem(MAP_ITEM_INDEX) }
-    }
+    val transfers by viewModel.transfers.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -163,9 +154,9 @@ fun MetroLineDetailScreen(
             )
         }
     ) { padding ->
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
         LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize().padding(padding),
+            modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -206,35 +197,6 @@ fun MetroLineDetailScreen(
                     SectionTitle("时刻表")
                     TransNoteCard { TimetableContent(timetable) }
                 }
-            }
-
-            item {
-                SectionTitle("线路轨迹")
-                StationTrackMap(
-                    points = state.stations.mapNotNull { wrapper ->
-                        val s = wrapper.station
-                        if (CoordinateUtils.isValid(s.latitude, s.longitude)) {
-                            MapPoint(
-                                latitude = s.latitude!!,
-                                longitude = s.longitude!!,
-                                title = s.name,
-                                isTransfer = wrapper.entrances.isNotEmpty(),
-                                key = s.id,
-                                colorHex = s.colorHex,
-                                markers = state.mapContext.markerNames(s.markerIds)
-                            )
-                        } else null
-                    },
-                    modifier = Modifier.fillMaxWidth().height(240.dp),
-                    selectedKey = selectedKey,
-                    onSelectKey = { selectedKey = it },
-                    defaultCenter = state.mapContext.cityCenter,
-                    searchItems = state.mapContext.searchStations.map {
-                        MapSearchItem(it.name, it.latitude, it.longitude, it.subtitle, it.markers)
-                    },
-                    emptyHint = "为地铁站点设置地图坐标后将在此绘制轨迹",
-                    lineColor = lineColor
-                )
             }
 
             if (editMode) {
@@ -297,6 +259,7 @@ fun MetroLineDetailScreen(
                             lineColor = lineColor,
                             lineColorHex = state.line?.colorHex.orEmpty(),
                             markers = state.mapContext.markers,
+                            transfers = transfers[wrapper.station.id].orEmpty(),
                             onClick = { onOpenStation(wrapper.station.id) },
                             onSelect = {},
                             onDelete = { pendingDeleteStation = wrapper.station.id to wrapper.station.name }
@@ -316,8 +279,9 @@ fun MetroLineDetailScreen(
                                 lineColor = lineColor,
                                 lineColorHex = state.line?.colorHex.orEmpty(),
                                 markers = state.mapContext.markers,
+                                transfers = transfers[wrapper.station.id].orEmpty(),
                                 onClick = { onOpenStation(wrapper.station.id) },
-                                onSelect = { selectStation(wrapper.station.id) },
+                                onSelect = { selectedKey = wrapper.station.id },
                                 onDelete = {}
                             )
                         }
@@ -326,6 +290,36 @@ fun MetroLineDetailScreen(
             }
 
             item { Spacer(Modifier.height(24.dp)) }
+        }
+        // 固定在底部的线路轨迹地图：始终可见、可拖动缩放；点击站点时居中该站
+        StationTrackMap(
+            points = state.stations.mapNotNull { wrapper ->
+                val s = wrapper.station
+                if (CoordinateUtils.isValid(s.latitude, s.longitude)) {
+                    MapPoint(
+                        latitude = s.latitude!!,
+                        longitude = s.longitude!!,
+                        title = s.name,
+                        isTransfer = wrapper.entrances.isNotEmpty(),
+                        key = s.id,
+                        colorHex = s.colorHex,
+                        markers = state.mapContext.markerNames(s.markerIds)
+                    )
+                } else null
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(220.dp)
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            selectedKey = selectedKey,
+            onSelectKey = { selectedKey = it },
+            defaultCenter = state.mapContext.cityCenter,
+            searchItems = state.mapContext.searchStations.map {
+                MapSearchItem(it.name, it.latitude, it.longitude, it.subtitle, it.markers)
+            },
+            emptyHint = "为地铁站点设置地图坐标后将在此绘制轨迹",
+            lineColor = lineColor
+        )
         }
     }
 
@@ -403,6 +397,7 @@ private fun MetroStationTimelineItem(
     lineColor: Color,
     lineColorHex: String,
     markers: List<StationMarkerEntity>,
+    transfers: List<MetroTransferLine>,
     onClick: () -> Unit,
     onSelect: () -> Unit,
     onDelete: () -> Unit
@@ -412,7 +407,7 @@ private fun MetroStationTimelineItem(
     StationTimelineRow(
         index = index,
         total = total,
-        isTransfer = wrapper.entrances.isNotEmpty(),
+        isTransfer = transfers.isNotEmpty(),
         isDragging = isDragging,
         isSelected = isSelected,
         showIndex = showIndex,
@@ -445,20 +440,37 @@ private fun MetroStationTimelineItem(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false)
             )
-            if (wrapper.entrances.isNotEmpty()) {
-                Spacer(Modifier.width(8.dp))
-                Tag(
-                    "可换乘",
-                    TransNoteTheme.colors.transferTagBg,
-                    MaterialTheme.colorScheme.primary,
-                    icon = Icons.Filled.Login
-                )
+            if (markerNames.isNotEmpty()) {
+                Spacer(Modifier.width(6.dp))
+                MarkerIconRow(names = markerNames, accent = lineColor, max = 4, iconSize = 18.dp)
             }
         }
-        // 站点标记（多选），显示在线路上
-        if (markerNames.isNotEmpty()) {
+        // 换乘线路：显示「本线颜色 + 换乘线颜色」的双色徽标（参照 pic1/pic2 样式）
+        if (transfers.isNotEmpty()) {
             Spacer(Modifier.height(4.dp))
-            MarkerIconRow(names = markerNames, accent = lineColor)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                transfers.forEach { transfer ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        TransferColorBadge(
+                            firstColor = LineColors.line(lineColorHex, lineColor),
+                            secondColor = LineColors.line(transfer.colorHex, lineColor)
+                        )
+                        Text(
+                            "换乘 ${transfer.lineName}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
         }
         Text(
             "出入口 ${wrapper.entrances.size} 个" +

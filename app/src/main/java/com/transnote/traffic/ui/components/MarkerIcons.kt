@@ -3,7 +3,6 @@ package com.transnote.traffic.ui.components
 import android.graphics.Bitmap
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DirectionsBus
-import androidx.compose.material.icons.filled.DirectionsRailway
 import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material.icons.filled.Hotel
 import androidx.compose.material.icons.filled.LocalHospital
@@ -20,6 +19,8 @@ import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.painter.Painter
@@ -61,14 +62,51 @@ val MetroMIcon: ImageVector = ImageVector.Builder(
 }.build()
 
 /**
+ * 火车站 / 高铁图标：中国铁路路徽（12306 官网图标样式）。
+ * 整体为火车头正面：上半部为「人」字、下半部为钢轨断面「工」字，外加圆形外框。
+ * 用描边绘制，着色时整体按前景色渲染。
+ */
+val RailwayIcon: ImageVector = ImageVector.Builder(
+    name = "Railway",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f
+).apply {
+    path(
+        stroke = SolidColor(Color.Black),
+        strokeLineWidth = 1.7f,
+        strokeLineCap = StrokeCap.Round,
+        strokeLineJoin = StrokeJoin.Round
+    ) {
+        // 外圆
+        moveTo(12f, 2f)
+        arcTo(10f, 10f, 0f, false, true, 12f, 22f)
+        arcTo(10f, 10f, 0f, false, true, 12f, 2f)
+        close()
+        // 「人」（火车头顶部）
+        moveTo(5.8f, 12.6f)
+        lineTo(12f, 4.8f)
+        lineTo(18.2f, 12.6f)
+        // 「工」（钢轨断面）
+        moveTo(8.2f, 12.6f)
+        lineTo(15.8f, 12.6f)
+        moveTo(12f, 12.6f)
+        lineTo(12f, 17.6f)
+        moveTo(8.6f, 17.6f)
+        lineTo(15.4f, 17.6f)
+    }
+}.build()
+
+/**
  * 站点标记图标目录（通用图标）。
  *
- * PRD：线路上展示标记时不再写文字，改用通用图标（地铁用 M 图标，火车用铁路图标），
+ * PRD：线路上展示标记时不再写文字，改用通用图标（地铁用 M 图标，火车用铁路徽标），
  * 与主流地图 App 一致，紧凑位置也能看清。自定义标记统一使用通用定位图标。
  */
 val markerIconCatalog: List<Pair<String, ImageVector>> = listOf(
     "metro" to MetroMIcon,
-    "train" to Icons.Filled.DirectionsRailway,
+    "train" to RailwayIcon,
     "plane" to Icons.Filled.Flight,
     "bus" to Icons.Filled.DirectionsBus,
     "taxi" to Icons.Filled.LocalTaxi,
