@@ -6,22 +6,34 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DirectionsBus
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.DirectionsSubway
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -43,6 +55,7 @@ import com.transnote.traffic.ui.screens.SearchScreen
 import com.transnote.traffic.ui.screens.SettingsScreen
 import com.transnote.traffic.ui.theme.TransNoteTheme
 import com.transnote.traffic.utils.ThemeMode
+import com.transnote.traffic.viewmodel.HomeTab
 import com.transnote.traffic.viewmodel.LineType
 
 /**
@@ -58,58 +71,21 @@ fun TransNoteRoot(
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    val topLevelRoutes = setOf(Routes.HOME, Routes.SEARCH, Routes.SETTINGS)
+    val topLevelRoutes = setOf(Routes.HOME_BUS, Routes.HOME_METRO, Routes.SETTINGS)
     val showBottomBar = currentRoute in topLevelRoutes
 
-    Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        bottomBar = {
-            if (showBottomBar) {
-                NavigationBar(containerColor = TransNoteTheme.colors.navBar) {
-                    NavigationBarItem(
-                        selected = currentRoute == Routes.HOME,
-                        onClick = {
-                            if (currentRoute != Routes.HOME) {
-                                navController.navigate(Routes.HOME) {
-                                    popUpTo(Routes.HOME) { inclusive = false }
-                                    launchSingleTop = true
-                                }
-                            }
-                        },
-                        icon = { Icon(Icons.Filled.DirectionsBus, contentDescription = null) },
-                        label = { Text("线路") },
-                        colors = navItemColors()
-                    )
-                    NavigationBarItem(
-                        selected = currentRoute == Routes.SEARCH,
-                        onClick = {
-                            if (currentRoute != Routes.SEARCH) {
-                                navController.navigate(Routes.SEARCH) { launchSingleTop = true }
-                            }
-                        },
-                        icon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                        label = { Text("搜索") },
-                        colors = navItemColors()
-                    )
-                    NavigationBarItem(
-                        selected = currentRoute == Routes.SETTINGS,
-                        onClick = {
-                            if (currentRoute != Routes.SETTINGS) {
-                                navController.navigate(Routes.SETTINGS) { launchSingleTop = true }
-                            }
-                        },
-                        icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
-                        label = { Text("设置") },
-                        colors = navItemColors()
-                    )
-                }
-            }
-        }
-    ) { padding ->
+    // 底部导航：公交线路 / 地铁线路 / 设置（苹果悬浮胶囊风格）
+    val navItems = listOf(
+        BottomNavItem(Routes.HOME_BUS, "公交线路", Icons.Filled.DirectionsBus),
+        BottomNavItem(Routes.HOME_METRO, "地铁线路", Icons.Filled.DirectionsSubway),
+        BottomNavItem(Routes.SETTINGS, "设置", Icons.Filled.Settings)
+    )
+
+    Box(modifier = Modifier.fillMaxSize()) {
         NavHost(
             navController = navController,
-            startDestination = Routes.HOME,
-            modifier = Modifier.padding(padding),
+            startDestination = Routes.HOME_BUS,
+            modifier = Modifier.fillMaxSize(),
             enterTransition = {
                 slideInHorizontally(
                     animationSpec = tween(300),
@@ -135,9 +111,24 @@ fun TransNoteRoot(
                 ) + fadeOut(tween(300))
             }
         ) {
-            composable(Routes.HOME) {
+            composable(Routes.HOME_BUS) {
                 HomeScreen(
                     container = container,
+                    tab = HomeTab.BUS,
+                    onOpenSearch = { navController.navigate(Routes.SEARCH) },
+                    onOpenBusLine = { navController.navigate(Routes.busLine(it)) },
+                    onOpenMetroLine = { navController.navigate(Routes.metroLine(it)) },
+                    onCreateLine = { type, id, cityId ->
+                        val typeKey = if (type == LineType.METRO) "METRO" else "BUS"
+                        navController.navigate(Routes.editLine(typeKey, id, cityId))
+                    }
+                )
+            }
+
+            composable(Routes.HOME_METRO) {
+                HomeScreen(
+                    container = container,
+                    tab = HomeTab.METRO,
                     onOpenSearch = { navController.navigate(Routes.SEARCH) },
                     onOpenBusLine = { navController.navigate(Routes.busLine(it)) },
                     onOpenMetroLine = { navController.navigate(Routes.metroLine(it)) },
@@ -298,14 +289,85 @@ fun TransNoteRoot(
                 )
             }
         }
+
+        if (showBottomBar) {
+            FloatingBottomNav(
+                items = navItems,
+                currentRoute = currentRoute,
+                onSelect = { route ->
+                    if (currentRoute != route) {
+                        navController.navigate(route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                },
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
     }
 }
 
-@Composable
-private fun navItemColors() = NavigationBarItemDefaults.colors(
-    selectedIconColor = MaterialTheme.colorScheme.primary,
-    selectedTextColor = MaterialTheme.colorScheme.primary,
-    indicatorColor = TransNoteTheme.colors.transferTagBg,
-    unselectedIconColor = TransNoteTheme.colors.hintText,
-    unselectedTextColor = TransNoteTheme.colors.hintText
+/** 底部导航项 */
+private data class BottomNavItem(
+    val route: String,
+    val label: String,
+    val icon: ImageVector
 )
+
+/**
+ * 苹果悬浮风格的底部导航：居中的圆角胶囊，图标 + 文字，选中高亮；背景透明，浮于内容之上。
+ */
+@Composable
+private fun FloatingBottomNav(
+    items: List<BottomNavItem>,
+    currentRoute: String?,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 20.dp, vertical = 8.dp)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = TransNoteTheme.colors.navBar,
+            shadowElevation = 10.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                items.forEach { item ->
+                    val selected = currentRoute == item.route
+                    val tint = if (selected) MaterialTheme.colorScheme.primary
+                    else TransNoteTheme.colors.hintText
+                    Column(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(18.dp))
+                            .clickable { onSelect(item.route) }
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(item.icon, contentDescription = item.label, tint = tint)
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            item.label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = tint
+                        )
+                    }
+                }
+            }
+        }
+    }
+}

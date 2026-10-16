@@ -36,6 +36,7 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -377,9 +378,9 @@ fun ImageGrid(
                     Icon(Icons.Filled.Add, contentDescription = "添加图片", tint = TransNoteTheme.colors.hintText)
                     Text("添加", style = MaterialTheme.typography.bodySmall, color = TransNoteTheme.colors.hintText)
                 }
-            }
         }
     }
+}
 
     previewPath?.let { path ->
         Dialog(onDismissRequest = { previewPath = null }) {
@@ -467,5 +468,27 @@ fun TimetableContent(text: String, modifier: Modifier = Modifier) {
                 }
             }
         }
+    }
+}
+
+/**
+ * 紧凑图标按钮：比默认 [IconButton] 更小，用于列表行尾，
+ * 让中间内容（站名 / 备注）有更多展示空间。
+ */
+@Composable
+fun CompactIconButton(
+    onClick: () -> Unit,
+    contentDescription: String?,
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    tint: Color = LocalContentColor.current
+) {
+    IconButton(onClick = onClick, modifier = modifier.size(34.dp)) {
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(20.dp)
+        )
     }
 }

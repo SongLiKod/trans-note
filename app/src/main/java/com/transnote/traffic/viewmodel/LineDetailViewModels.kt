@@ -162,6 +162,7 @@ class BusLineDetailViewModel(
                 firstBus = result.startTime,
                 lastBus = result.endTime,
                 endStop = result.endStop,
+                timetable = result.timetable,
                 stations = inputs
             )
             _amapCandidates.value = emptyList()
@@ -242,6 +243,14 @@ class MetroLineDetailViewModel(
     val exitsBusy: StateFlow<Boolean> = _exitsBusy.asStateFlow()
     private val _exitsMessage = MutableStateFlow<String?>(null)
     val exitsMessage: StateFlow<String?> = _exitsMessage.asStateFlow()
+
+    // ---- 从高德更新线路（首末班 / 开往方向 / 时刻表 / 站点坐标）----
+    private val _amapCandidates = MutableStateFlow<List<AmapBusLine>>(emptyList())
+    val amapCandidates: StateFlow<List<AmapBusLine>> = _amapCandidates.asStateFlow()
+    private val _amapBusy = MutableStateFlow(false)
+    val amapBusy: StateFlow<Boolean> = _amapBusy.asStateFlow()
+    private val _amapMessage = MutableStateFlow<String?>(null)
+    val amapMessage: StateFlow<String?> = _amapMessage.asStateFlow()
 
     val uiState: StateFlow<MetroLineDetailUiState> = combine(
         repo.observeMetroLine(lineId),
@@ -337,6 +346,8 @@ class MetroLineDetailViewModel(
                             name = exit.name,
                             road = exit.road,
                             landmark = exit.landmark,
+                            district = exit.district,
+                            nearby = exit.nearby,
                             latitude = exit.latitude,
                             longitude = exit.longitude
                         )
@@ -345,7 +356,9 @@ class MetroLineDetailViewModel(
                 } else {
                     val patched = match.copy(
                         road = exit.road.ifBlank { match.road },
-                        landmark = match.landmark.ifBlank { exit.landmark },
+                        district = exit.district.ifBlank { match.district },
+                        landmark = exit.landmark.ifBlank { match.landmark },
+                        nearby = exit.nearby.ifBlank { match.nearby },
                         latitude = match.latitude ?: exit.latitude,
                         longitude = match.longitude ?: exit.longitude
                     )
@@ -368,6 +381,75 @@ class MetroLineDetailViewModel(
     fun toggleFavorite() {
         val line = uiState.value.line ?: return
         viewModelScope.launch { repo.setMetroFavorite(line.id, !line.isFavorite) }
+    }
+
+    /** 按线路名（或输入关键词）查询高德候选线路，供用户选择后更新 */
+    fun searchAmapUpdate(key: String, keyword: String) {
+        viewModelScope.launch {
+            _amapBusy.value = true
+            _amapMessage.value = null
+            _amapCandidates.value = emptyList()
+            val line = repo.getMetroLine(lineId)
+            val cityName = line?.let { repo.getCityName(it.cityId) }.orEmpty()
+            val query = keyword.trim().ifBlank { line?.lineName.orEmpty() }
+            if (key.isBlank()) {
+                _amapMessage.value = "请先在「设置 → 高德地图 API」填写 Key"
+                _amapBusy.value = false
+                return@launch
+            }
+            AmapApi.searchBusLines(key, query, cityName)
+                .onSuccess { list ->
+                    _amapCandidates.value = list
+                    if (list.isEmpty()) _amapMessage.value = "未查询到线路，请检查名称或城市"
+                }
+                .onFailure { _amapMessage.value = it.message ?: "查询失败，请检查网络或 Key" }
+            _amapBusy.value = false
+        }
+    }
+
+    /** 用选中的高德线路更新当前地铁线路（首末班 / 开往方向 / 时刻表 / 站点坐标与标记） */
+    fun applyAmapUpdate(key: String, result: AmapBusLine) {
+        viewModelScope.launch {
+            _amapBusy.value = true
+            _amapMessage.value = "正在更新线路与站点…"
+            val inputs = coroutineScope {
+                result.stations.chunked(4).flatMap { chunk ->
+                    chunk.map { station ->
+                        async {
+                            val markers = AmapApi.detectNearbyTransit(
+                                key, station.latitude, station.longitude
+                            ).map { it.markerName }
+                            BusStationInput(
+                                name = station.name,
+                                latitude = station.latitude,
+                                longitude = station.longitude,
+                                markerNames = markers
+                            )
+                        }
+                    }.awaitAll()
+                }
+            }
+            repo.updateMetroLineFromAmap(
+                lineId = lineId,
+                firstBus = result.startTime,
+                lastBus = result.endTime,
+                endStop = result.endStop,
+                timetable = result.timetable,
+                stations = inputs
+            )
+            _amapCandidates.value = emptyList()
+            _amapMessage.value = "已更新「${result.name}」，共 ${inputs.size} 个站点"
+            _amapBusy.value = false
+        }
+    }
+
+    fun clearAmapUpdate() {
+        _amapCandidates.value = emptyList()
+        _amapMessage.value = null
+    }
+
+    fun consumeAmapMessage() {
+        _amapMessage.value = null
     }
 
     fun togglePinned() {

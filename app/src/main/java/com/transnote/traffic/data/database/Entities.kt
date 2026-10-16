@@ -192,6 +192,10 @@ data class MetroEntranceEntity(
     val road: String = "",
     val landmark: String = "",
     val note: String = "",
+    /** 所在行政区（高德，如「黄浦区」） */
+    @ColumnInfo(defaultValue = "") val district: String = "",
+    /** 周边道路（高德，如「南京东路、西藏中路」） */
+    @ColumnInfo(defaultValue = "") val nearby: String = "",
     val imagePaths: List<String> = emptyList(),
     val latitude: Double? = null,
     val longitude: Double? = null,

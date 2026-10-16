@@ -52,6 +52,9 @@ data class EntranceEditorState(
     val road: String = "",
     val landmark: String = "",
     val note: String = "",
+    /** 高德解析信息（只读展示） */
+    val district: String = "",
+    val nearby: String = "",
     val latitude: Double? = null,
     val longitude: Double? = null,
     val imagePaths: List<String> = emptyList(),
@@ -391,6 +394,8 @@ class MetroStationViewModel(
                             name = exit.name,
                             road = exit.road,
                             landmark = exit.landmark,
+                            district = exit.district,
+                            nearby = exit.nearby,
                             latitude = exit.latitude,
                             longitude = exit.longitude
                         )
@@ -399,7 +404,9 @@ class MetroStationViewModel(
                 } else {
                     val patched = match.copy(
                         road = exit.road.ifBlank { match.road },
-                        landmark = match.landmark.ifBlank { exit.landmark },
+                        district = exit.district.ifBlank { match.district },
+                        landmark = exit.landmark.ifBlank { match.landmark },
+                        nearby = exit.nearby.ifBlank { match.nearby },
                         latitude = match.latitude ?: exit.latitude,
                         longitude = match.longitude ?: exit.longitude
                     )
@@ -472,6 +479,8 @@ class EntranceEditViewModel(
             road = entrance.road,
             landmark = entrance.landmark,
             note = entrance.note,
+            district = entrance.district,
+            nearby = entrance.nearby,
             latitude = entrance.latitude,
             longitude = entrance.longitude,
             imagePaths = entrance.imagePaths,
@@ -519,6 +528,8 @@ class EntranceEditViewModel(
                     road = s.road.trim(),
                     landmark = s.landmark.trim(),
                     note = s.note.trim(),
+                    district = s.district,
+                    nearby = s.nearby,
                     imagePaths = s.imagePaths,
                     latitude = s.latitude,
                     longitude = s.longitude

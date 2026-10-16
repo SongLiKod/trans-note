@@ -6,6 +6,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLDecoder
 import java.net.URLEncoder
 
 /** 高德线路中的一个站点（经纬度已转换为 WGS-84） */
@@ -20,10 +21,16 @@ data class AmapBusLine(
     val id: String,
     val name: String,
     val type: String,
+    /** 首发站 */
     val startStop: String,
+    /** 末站 */
     val endStop: String,
+    /** 首班车时间 */
     val startTime: String,
+    /** 末班车时间 */
     val endTime: String,
+    /** 发车时刻表（由高德 timedesc / 运行时间解析，可能为空） */
+    val timetable: String = "",
     val distance: String,
     val stations: List<AmapStation>
 )
@@ -37,6 +44,10 @@ data class AmapMetroExit(
     val name: String,
     val road: String = "",
     val landmark: String = "",
+    /** 所在行政区（如「黄浦区」） */
+    val district: String = "",
+    /** 周边道路（如「南京东路、西藏中路」） */
+    val nearby: String = "",
     val latitude: Double? = null,
     val longitude: Double? = null
 )
@@ -161,14 +172,16 @@ object AmapApi {
             }
             val raws = parseExits(body, stationName)
             if (raws.isEmpty()) return@runCatching emptyList()
-            // 逆地理编码批量解析每个出口所在的真实街道与社区
+            // 逆地理编码批量解析每个出口所在的真实街道、社区 / 商圈、行政区与周边道路
             val details = reverseGeocode(key, raws)
             raws.mapIndexed { i, raw ->
-                val (road, landmark) = details.getOrElse(i) { "" to "" }
+                val d = details.getOrElse(i) { ExitDetail.EMPTY }
                 AmapMetroExit(
                     name = raw.name,
-                    road = road,
-                    landmark = landmark,
+                    road = d.road,
+                    landmark = d.landmark,
+                    district = d.district,
+                    nearby = d.nearby,
                     latitude = raw.wgsLat,
                     longitude = raw.wgsLng
                 )
@@ -227,15 +240,27 @@ object AmapApi {
         return result.values.toList()
     }
 
+    /** 逆地理编码解析出的出口详情（真实街道 / 社区地标 / 行政区 / 周边道路） */
+    private data class ExitDetail(
+        val road: String,
+        val landmark: String,
+        val district: String,
+        val nearby: String
+    ) {
+        companion object {
+            val EMPTY = ExitDetail("", "", "", "")
+        }
+    }
+
     /**
-     * 批量逆地理编码：返回与 [raws] 等长的 (街道, 地标) 列表。
+     * 批量逆地理编码：返回与 [raws] 等长的出口详情列表。
      * 使用 batch=true，最多 20 个点一次请求。
      */
     private fun reverseGeocode(
         key: String,
         raws: List<ExitRaw>
-    ): List<Pair<String, String>> {
-        val out = MutableList(raws.size) { "" to "" }
+    ): List<ExitDetail> {
+        val out = MutableList(raws.size) { ExitDetail.EMPTY }
         val validIdx = raws.indices.filter { raws[it].gcjLat != null && raws[it].gcjLng != null }
         validIdx.chunked(20).forEach { chunk ->
             val location = chunk.joinToString("|") { i ->
@@ -251,40 +276,47 @@ object AmapApi {
                 append("&radius=200&extensions=all&output=JSON")
             }
             val body = runCatching { httpGet(url) }.getOrNull()
-            val roads = parseRegeo(body, chunk.size)
-            chunk.forEachIndexed { j, rawIdx -> out[rawIdx] = roads.getOrElse(j) { "" to "" } }
+            val details = parseRegeo(body, chunk.size)
+            chunk.forEachIndexed { j, rawIdx -> out[rawIdx] = details.getOrElse(j) { ExitDetail.EMPTY } }
         }
         return out
     }
 
-    private fun parseRegeo(body: String?, expected: Int): List<Pair<String, String>> {
-        val empty = List(expected) { "" to "" }
+    private fun parseRegeo(body: String?, expected: Int): List<ExitDetail> {
+        val empty = List(expected) { ExitDetail.EMPTY }
         if (body == null) return empty
         val root = runCatching { JSONObject(body) }.getOrNull() ?: return empty
         if (root.optString("status") != "1") return empty
-        val list = ArrayList<Pair<String, String>>(expected)
+        val list = ArrayList<ExitDetail>(expected)
         val arr = root.optJSONArray("regeocodes")
         if (arr != null) {
-            for (i in 0 until arr.length()) list.add(roadLandmark(arr.optJSONObject(i)))
+            for (i in 0 until arr.length()) list.add(parseDetail(arr.optJSONObject(i)))
         } else {
-            list.add(roadLandmark(root.optJSONObject("regeocode")))
+            list.add(parseDetail(root.optJSONObject("regeocode")))
         }
-        while (list.size < expected) list.add("" to "")
+        while (list.size < expected) list.add(ExitDetail.EMPTY)
         return list
     }
 
-    /** 从逆地理编码结果提取「真实街道」与「社区/地标」 */
-    private fun roadLandmark(regeo: JSONObject?): Pair<String, String> {
-        if (regeo == null) return "" to ""
+    /** 从逆地理编码结果提取街道 / 社区地标 / 行政区 / 周边道路 */
+    private fun parseDetail(regeo: JSONObject?): ExitDetail {
+        if (regeo == null) return ExitDetail.EMPTY
         val comp = regeo.optJSONObject("addressComponent")
+        val roadsArr = regeo.optJSONArray("roads")
         // 真实街道：门牌所属道路 → 附近道路 → 乡镇/街道
         val road = cleanField(comp?.optJSONObject("streetNumber")?.optString("street"))
-            .ifBlank { firstArrayString(regeo.optJSONArray("roads"), "name") }
+            .ifBlank { firstArrayString(roadsArr, "name") }
             .ifBlank { cleanField(comp?.optString("township")) }
         // 地标：所在社区 → 所属商圈
         val landmark = cleanField(jsonFirst(comp?.optJSONObject("neighborhood")?.opt("name")))
             .ifBlank { firstArrayString(regeo.optJSONArray("businessAreas"), "name") }
-        return road to landmark
+        val district = cleanField(comp?.optString("district"))
+        val nearby = arrayStrings(roadsArr, "name")
+            .filter { it.isNotBlank() && it != road }
+            .distinct()
+            .take(3)
+            .joinToString("、")
+        return ExitDetail(road, landmark, district, nearby)
     }
 
     /** 取 JSON 数组里首个对象的指定字段（如 roads[].name / businessAreas[].name） */
@@ -296,6 +328,17 @@ object AmapApi {
             if (v.isNotBlank()) return v
         }
         return ""
+    }
+
+    /** 取 JSON 数组里所有对象的指定字段 */
+    private fun arrayStrings(arr: JSONArray?, key: String): List<String> {
+        if (arr == null) return emptyList()
+        val list = ArrayList<String>(arr.length())
+        for (i in 0 until arr.length()) {
+            val obj = arr.optJSONObject(i) ?: continue
+            list.add(cleanField(obj.optString(key)))
+        }
+        return list
     }
 
     /** 高德空值可能是 ""、[]、{} 等形式，统一清洗为空串 */
@@ -358,6 +401,8 @@ object AmapApi {
         val result = ArrayList<AmapBusLine>(lines.length())
         for (i in 0 until lines.length()) {
             val line = lines.optJSONObject(i) ?: continue
+            val startTime = formatAmapTime(line.optString("start_time"))
+            val endTime = formatAmapTime(line.optString("end_time"))
             result.add(
                 AmapBusLine(
                     id = line.optString("id"),
@@ -365,8 +410,9 @@ object AmapApi {
                     type = line.optString("type"),
                     startStop = line.optString("start_stop"),
                     endStop = line.optString("end_stop"),
-                    startTime = cleanTime(line.optString("start_time")),
-                    endTime = cleanTime(line.optString("end_time")),
+                    startTime = startTime,
+                    endTime = endTime,
+                    timetable = parseTimetable(line.optString("timedesc"), startTime, endTime),
                     distance = line.optString("distance"),
                     stations = parseStations(line.optJSONArray("busstops"))
                 )
@@ -393,7 +439,41 @@ object AmapApi {
         return list
     }
 
-    /** 高德时间字段可能为 "05:10" 或 "05:10-23:30"，统一取首段 */
-    private fun cleanTime(raw: String): String =
-        raw.trim().substringBefore("-").substringBefore("—").trim()
+    /** 高德时间字段可能为 "05:10"、"05:10-23:30" 或 "0510"，统一取首段并规整为 HH:MM */
+    private fun formatAmapTime(raw: String): String =
+        normalizeClock(raw.trim().substringBefore("-").substringBefore("—").trim())
+
+    /** 把 "0510" / "5:10" 规整为 "05:10"；无法识别时原样返回 */
+    private fun normalizeClock(value: String): String {
+        if (value.isEmpty()) return ""
+        if (value.contains(":")) {
+            val parts = value.split(":")
+            val h = parts.getOrNull(0)?.trim()?.toIntOrNull() ?: return value
+            val m = parts.getOrNull(1)?.trim()?.takeWhile { it.isDigit() }?.toIntOrNull() ?: return value
+            return String.format(java.util.Locale.US, "%02d:%02d", h, m)
+        }
+        if (value.length in 3..4 && value.all { it.isDigit() }) {
+            val h = value.dropLast(2).toIntOrNull() ?: return value
+            val m = value.takeLast(2).toIntOrNull() ?: return value
+            return String.format(java.util.Locale.US, "%02d:%02d", h, m)
+        }
+        return value
+    }
+
+    /**
+     * 解析高德 `timedesc`（线路详细时间，JSON 串，可能经过 URL 编码）为时刻表文本：
+     * 抽取其中所有 HH:MM 时间点并按出现顺序去重；若取不到则用首末班时间兜底。
+     */
+    private fun parseTimetable(timedesc: String, startTime: String, endTime: String): String {
+        val decoded = if (timedesc.isBlank()) timedesc
+        else runCatching { URLDecoder.decode(timedesc, "UTF-8") }.getOrDefault(timedesc)
+        val times = Regex("([01]?\\d|2[0-4]):[0-5]\\d")
+            .findAll(decoded)
+            .map { it.value }
+            .distinct()
+            .toList()
+        if (times.isNotEmpty()) return times.joinToString(" ")
+        // 兜底：仅给出首末班两个时间点
+        return listOf(startTime, endTime).filter { it.isNotBlank() }.distinct().joinToString(" ")
+    }
 }

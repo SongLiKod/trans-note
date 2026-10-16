@@ -21,6 +21,7 @@ import com.transnote.traffic.utils.CoordinateUtils
 import com.transnote.traffic.utils.SearchMatcher
 import com.transnote.traffic.utils.SearchResult
 import com.transnote.traffic.utils.SearchResultType
+import com.transnote.traffic.utils.formatFirstLastBus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -427,7 +428,7 @@ class TransNoteRepository(
 
     /**
      * 用高德线路数据更新已有公交线路：
-     * - 更新首末班与当前方向的开往方向；
+     * - 更新首末班、当前方向的时刻表与开往方向；
      * - 按归一化站名对齐站点，更新坐标与标记，保留原站点的备注 / 图片 / 颜色等；
      * - 删除高德结果中已不存在的站点。
      */
@@ -437,6 +438,7 @@ class TransNoteRepository(
         firstBus: String,
         lastBus: String,
         endStop: String,
+        timetable: String = "",
         stations: List<BusStationInput>
     ) {
         val line = getBusLine(lineId) ?: return
@@ -449,7 +451,13 @@ class TransNoteRepository(
                 } else line.upDestination,
                 downDestination = if (direction == BusStationEntity.DIRECTION_DOWN) {
                     endStop.ifBlank { line.downDestination }
-                } else line.downDestination
+                } else line.downDestination,
+                upTimetable = if (direction == BusStationEntity.DIRECTION_UP && timetable.isNotBlank()) {
+                    timetable
+                } else line.upTimetable,
+                downTimetable = if (direction == BusStationEntity.DIRECTION_DOWN && timetable.isNotBlank()) {
+                    timetable
+                } else line.downTimetable
             )
         )
         val existing = getBusStations(lineId, direction)
@@ -606,6 +614,56 @@ class TransNoteRepository(
     }
 
     suspend fun deleteMetroStationById(id: Long) = db.metroStationDao().deleteById(id)
+
+    /**
+     * 用高德线路数据更新已有地铁线路：
+     * - 更新首末班、开往方向与时刻表；
+     * - 按归一化站名对齐站点，更新坐标与标记，保留原站点的备注 / 图片 / 颜色 / 出入口等；
+     * - 删除高德结果中已不存在的站点。
+     */
+    suspend fun updateMetroLineFromAmap(
+        lineId: Long,
+        firstBus: String,
+        lastBus: String,
+        endStop: String,
+        timetable: String,
+        stations: List<BusStationInput>
+    ) {
+        val line = getMetroLine(lineId) ?: return
+        saveMetroLine(
+            line.copy(
+                firstBus = firstBus.ifBlank { line.firstBus },
+                lastBus = lastBus.ifBlank { line.lastBus },
+                destination = endStop.ifBlank { line.destination },
+                timetable = timetable.ifBlank { line.timetable }
+            )
+        )
+        val existing = getMetroStations(lineId)
+        val existingByName = existing.associateBy { normalizeStationName(it.name) }
+        val keptIds = mutableSetOf<Long>()
+        stations.forEachIndexed { index, input ->
+            val old = existingByName[normalizeStationName(input.name)]
+            val base = old ?: MetroStationEntity(lineId = lineId, name = input.name)
+            val markerIds = if (input.markerNames.isNotEmpty()) {
+                input.markerNames.map { ensureMarkerId(it) }.filter { it > 0L }
+            } else {
+                base.markerIds
+            }
+            val id = saveMetroStation(
+                base.copy(
+                    id = base.id,
+                    lineId = lineId,
+                    orderIndex = index,
+                    name = input.name,
+                    latitude = input.latitude,
+                    longitude = input.longitude,
+                    markerIds = markerIds
+                )
+            )
+            keptIds.add(id)
+        }
+        existing.filter { it.id !in keptIds }.forEach { deleteMetroStation(it) }
+    }
 
     suspend fun getMetroStationWithEntrances(id: Long): MetroStationWithEntrances? =
         db.metroStationDao().getWithEntrances(id)
@@ -843,9 +901,7 @@ class TransNoteRepository(
 
     private fun buildBusLineSubtitle(line: BusLineEntity): String {
         val parts = mutableListOf<String>()
-        if (line.firstBus.isNotBlank() || line.lastBus.isNotBlank()) {
-            parts.add("首末班 ${line.firstBus.ifBlank { "--" }}~${line.lastBus.ifBlank { "--" }}")
-        }
+        formatFirstLastBus(line.firstBus, line.lastBus).let { if (it.isNotBlank()) parts.add(it) }
         if (line.fare.isNotBlank()) parts.add("票价 ${line.fare}")
         val dest = line.upDestination.ifBlank { line.downDestination }
         if (dest.isNotBlank()) parts.add("开往 $dest")
@@ -854,9 +910,7 @@ class TransNoteRepository(
 
     private fun buildMetroLineSubtitle(line: MetroLineEntity): String {
         val parts = mutableListOf<String>()
-        if (line.firstBus.isNotBlank() || line.lastBus.isNotBlank()) {
-            parts.add("首末班 ${line.firstBus.ifBlank { "--" }}~${line.lastBus.ifBlank { "--" }}")
-        }
+        formatFirstLastBus(line.firstBus, line.lastBus).let { if (it.isNotBlank()) parts.add(it) }
         if (line.fare.isNotBlank()) parts.add("票价 ${line.fare}")
         if (line.destination.isNotBlank()) parts.add("开往 ${line.destination}")
         return parts.joinToString(" · ").ifBlank { "地铁线路" }

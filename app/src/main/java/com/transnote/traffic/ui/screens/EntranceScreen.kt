@@ -149,6 +149,28 @@ fun EntranceScreen(
                 placeholder = "如：仅楼梯、有无障碍电梯"
             )
 
+            if (editor.district.isNotBlank() || editor.nearby.isNotBlank()) {
+                Spacer(Modifier.height(12.dp))
+                SectionTitle("高德信息")
+                TransNoteCard {
+                    Column {
+                        if (editor.district.isNotBlank()) {
+                            Text(
+                                "所在行政区：${editor.district}",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                        if (editor.nearby.isNotBlank()) {
+                            if (editor.district.isNotBlank()) Spacer(Modifier.height(4.dp))
+                            Text(
+                                "周边道路：${editor.nearby}",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                }
+            }
+
             Spacer(Modifier.height(20.dp))
             SectionTitle("出口图片")
             ImageGrid(

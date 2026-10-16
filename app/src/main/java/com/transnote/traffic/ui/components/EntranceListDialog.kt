@@ -109,8 +109,13 @@ fun MetroEntranceListDialog(
                                 Spacer(Modifier.width(8.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(entrance.name, style = MaterialTheme.typography.bodyLarge)
-                                    val sub = listOf(entrance.road, entrance.landmark, entrance.note)
-                                        .filter { it.isNotBlank() }.joinToString(" · ")
+                                    val sub = buildList {
+                                        if (entrance.road.isNotBlank()) add("道路 ${entrance.road}")
+                                        if (entrance.district.isNotBlank()) add(entrance.district)
+                                        if (entrance.landmark.isNotBlank()) add(entrance.landmark)
+                                        if (entrance.nearby.isNotBlank()) add("周边 ${entrance.nearby}")
+                                        if (entrance.note.isNotBlank()) add(entrance.note)
+                                    }.joinToString(" · ")
                                     if (sub.isNotBlank()) {
                                         Text(
                                             sub,

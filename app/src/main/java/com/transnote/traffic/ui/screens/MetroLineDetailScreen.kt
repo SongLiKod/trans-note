@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -30,9 +31,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,7 +52,9 @@ import com.transnote.traffic.AppContainer
 import com.transnote.traffic.data.database.MetroStationWithEntrances
 import com.transnote.traffic.data.database.StationMarkerEntity
 import com.transnote.traffic.repository.MetroTransferLine
+import com.transnote.traffic.ui.components.AmapUpdateDialog
 import com.transnote.traffic.ui.components.CollapsibleTrackMapLayout
+import com.transnote.traffic.ui.components.CompactIconButton
 import com.transnote.traffic.ui.components.ConfirmDialog
 import com.transnote.traffic.ui.components.DragReorderColumn
 import com.transnote.traffic.ui.components.LabeledTextField
@@ -66,6 +72,7 @@ import com.transnote.traffic.ui.theme.LineColors
 import com.transnote.traffic.ui.theme.TransNoteTheme
 import com.transnote.traffic.utils.CoordinateUtils
 import com.transnote.traffic.utils.StationNameParser
+import com.transnote.traffic.utils.formatFirstLastBus
 import com.transnote.traffic.viewmodel.MetroLineDetailViewModel
 import com.transnote.traffic.viewmodel.containerViewModelFactory
 
@@ -103,6 +110,18 @@ fun MetroLineDetailScreen(
     val exitsBusy by viewModel.exitsBusy.collectAsStateWithLifecycle()
     val exitsMessage by viewModel.exitsMessage.collectAsStateWithLifecycle()
     val amapKey by container.themeManager.amapKey.collectAsStateWithLifecycle(initialValue = "")
+    val amapCandidates by viewModel.amapCandidates.collectAsStateWithLifecycle()
+    val amapBusy by viewModel.amapBusy.collectAsStateWithLifecycle()
+    val amapMessage by viewModel.amapMessage.collectAsStateWithLifecycle()
+    var showAmapUpdate by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(amapMessage) {
+        amapMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.consumeAmapMessage()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -145,6 +164,15 @@ fun MetroLineDetailScreen(
                                 onClick = { menuExpanded = false; onEditLine() }
                             )
                             DropdownMenuItem(
+                                text = { Text("从高德更新线路") },
+                                leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    showAmapUpdate = true
+                                    viewModel.searchAmapUpdate(amapKey, state.line?.lineName.orEmpty())
+                                }
+                            )
+                            DropdownMenuItem(
                                 text = { Text("删除线路", color = TransNoteTheme.colors.danger) },
                                 leadingIcon = {
                                     Icon(
@@ -159,7 +187,8 @@ fun MetroLineDetailScreen(
                     }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         CollapsibleTrackMapLayout(
             points = state.stations.mapNotNull { wrapper ->
@@ -196,9 +225,8 @@ fun MetroLineDetailScreen(
                     Column {
                         val info = state.line?.let { line ->
                             buildList {
-                                if (line.firstBus.isNotBlank() || line.lastBus.isNotBlank()) {
-                                    add("首末班 ${line.firstBus.ifBlank { "--" }}~${line.lastBus.ifBlank { "--" }}")
-                                }
+                                formatFirstLastBus(line.firstBus, line.lastBus)
+                                    .let { if (it.isNotBlank()) add(it) }
                                 if (line.fare.isNotBlank()) add("票价 ${line.fare}")
                             }.joinToString(" · ")
                         }.orEmpty()
@@ -261,12 +289,6 @@ fun MetroLineDetailScreen(
 
             item {
                 SectionTitle("地铁站点（${state.stations.size}）")
-                Text(
-                    if (editMode) "编辑中：点击站点可修改出入口，长按可拖拽排序"
-                    else "只读展示；点击站点可在地图上定位高亮，点右上角「编辑」后可增删、拖拽或修改",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TransNoteTheme.colors.hintText
-                )
             }
 
             item {
@@ -407,6 +429,24 @@ fun MetroLineDetailScreen(
             }
         )
     }
+
+    if (showAmapUpdate) {
+        AmapUpdateDialog(
+            lineName = state.line?.lineName.orEmpty(),
+            busy = amapBusy,
+            message = amapMessage,
+            candidates = amapCandidates,
+            onSearch = { keyword -> viewModel.searchAmapUpdate(amapKey, keyword) },
+            onApply = { result ->
+                viewModel.applyAmapUpdate(amapKey, result)
+                showAmapUpdate = false
+            },
+            onDismiss = {
+                showAmapUpdate = false
+                viewModel.clearAmapUpdate()
+            }
+        )
+    }
 }
 
 /** 地铁站点行（线路图圆点样式）。只读模式下点击可在地图定位高亮。 */
@@ -446,15 +486,15 @@ private fun MetroStationTimelineItem(
                 Icon(
                     Icons.Filled.DragHandle,
                     contentDescription = "拖拽排序",
-                    tint = TransNoteTheme.colors.hintText
+                    tint = TransNoteTheme.colors.hintText,
+                    modifier = Modifier.size(20.dp)
                 )
-                IconButton(onClick = onDelete) {
-                    Icon(
-                        Icons.Filled.Delete,
-                        contentDescription = "删除站点",
-                        tint = TransNoteTheme.colors.danger
-                    )
-                }
+                CompactIconButton(
+                    onClick = onDelete,
+                    contentDescription = "删除站点",
+                    icon = Icons.Filled.Delete,
+                    tint = TransNoteTheme.colors.danger
+                )
             }
         }
     ) {

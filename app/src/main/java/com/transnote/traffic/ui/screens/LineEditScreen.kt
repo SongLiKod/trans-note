@@ -64,6 +64,7 @@ import com.transnote.traffic.AppContainer
 import com.transnote.traffic.data.database.BusStationEntity
 import com.transnote.traffic.data.database.CityEntity
 import com.transnote.traffic.ui.components.ColorPickerRow
+import com.transnote.traffic.ui.components.CompactIconButton
 import com.transnote.traffic.ui.components.DragReorderColumn
 import com.transnote.traffic.ui.components.LabeledTextField
 import com.transnote.traffic.ui.components.SectionTitle
@@ -380,18 +381,20 @@ fun LineEditScreen(
                             Icon(
                                 Icons.Filled.DragHandle,
                                 contentDescription = "拖拽排序",
-                                tint = TransNoteTheme.colors.hintText
+                                tint = TransNoteTheme.colors.hintText,
+                                modifier = Modifier.size(20.dp)
                             )
-                            IconButton(onClick = { renameIndex = index }) {
-                                Icon(Icons.Filled.Edit, contentDescription = "重命名")
-                            }
-                            IconButton(onClick = { viewModel.removeStation(index) }) {
-                                Icon(
-                                    Icons.Filled.Delete,
-                                    contentDescription = "删除",
-                                    tint = TransNoteTheme.colors.danger
-                                )
-                            }
+                            CompactIconButton(
+                                onClick = { renameIndex = index },
+                                contentDescription = "重命名",
+                                icon = Icons.Filled.Edit
+                            )
+                            CompactIconButton(
+                                onClick = { viewModel.removeStation(index) },
+                                contentDescription = "删除",
+                                icon = Icons.Filled.Delete,
+                                tint = TransNoteTheme.colors.danger
+                            )
                         }
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -681,6 +684,10 @@ private fun AmapImportDialog(
                                     if (line.startTime.isNotBlank()) {
                                         if (isNotEmpty()) append(" · ")
                                         append("首末班 ${line.startTime}~${line.endTime}")
+                                    }
+                                    if (line.timetable.isNotBlank()) {
+                                        if (isNotEmpty()) append(" · ")
+                                        append("时刻表 ${line.timetable}")
                                     }
                                 }
                                 if (detail.isNotBlank()) {

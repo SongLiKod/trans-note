@@ -4,7 +4,8 @@ package com.transnote.traffic.ui.navigation
  * 页面路由（TechDoc 第 6 节 screens 划分）。
  */
 object Routes {
-    const val HOME = "home"
+    const val HOME_BUS = "home_bus"
+    const val HOME_METRO = "home_metro"
     const val SEARCH = "search"
     const val SETTINGS = "settings"
 

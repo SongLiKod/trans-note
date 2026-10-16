@@ -23,7 +23,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         BusStationEntranceCrossRef::class,
         StationMarkerEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -104,6 +104,16 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v4 → v5：为地铁出入口增加「所在行政区 / 周边道路」字段（高德信息，保留已有数据）。
+         */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE metro_entrance ADD COLUMN district TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE metro_entrance ADD COLUMN nearby TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: build(context.applicationContext).also { INSTANCE = it }
@@ -122,7 +132,7 @@ abstract class AppDatabase : RoomDatabase() {
                         seedDefaultMarkers(db)
                     }
                 })
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .fallbackToDestructiveMigration()
                 .build()
 

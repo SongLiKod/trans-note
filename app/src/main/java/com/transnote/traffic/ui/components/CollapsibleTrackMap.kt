@@ -81,10 +81,11 @@ fun CollapsibleTrackMapLayout(
 
         var panelHeightPx by remember { mutableFloatStateOf(Float.NaN) }
         val scope = rememberCoroutineScope()
+        // 默认最小化（仅保留底部手柄，不显示地图）
         val currentPx = if (panelHeightPx.isFinite() && panelHeightPx > 0f) {
             panelHeightPx.coerceIn(hiddenPx, maxPx)
-        } else minPx
-        LaunchedEffect(maxPx) { if (!panelHeightPx.isFinite()) panelHeightPx = minPx }
+        } else hiddenPx
+        LaunchedEffect(maxPx) { if (!panelHeightPx.isFinite()) panelHeightPx = hiddenPx }
 
         fun animateTo(target: Float) {
             scope.launch {

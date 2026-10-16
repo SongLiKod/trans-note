@@ -38,8 +38,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -64,6 +62,7 @@ import com.transnote.traffic.ui.components.TransNoteCard
 import com.transnote.traffic.ui.components.TransNoteTopBar
 import com.transnote.traffic.ui.theme.LineColors
 import com.transnote.traffic.ui.theme.TransNoteTheme
+import com.transnote.traffic.utils.formatFirstLastBus
 import com.transnote.traffic.viewmodel.HomeTab
 import com.transnote.traffic.viewmodel.HomeViewModel
 import com.transnote.traffic.viewmodel.LineType
@@ -76,6 +75,7 @@ import com.transnote.traffic.viewmodel.containerViewModelFactory
 @Composable
 fun HomeScreen(
     container: AppContainer,
+    tab: HomeTab,
     onOpenSearch: () -> Unit,
     onOpenBusLine: (Long) -> Unit,
     onOpenMetroLine: (Long) -> Unit,
@@ -85,7 +85,6 @@ fun HomeScreen(
         factory = containerViewModelFactory { HomeViewModel(it.repository, it.themeManager) }
     )
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    var tab by remember { mutableStateOf(HomeTab.BUS) }
     var pendingDelete by remember { mutableStateOf<Any?>(null) }
     var groupTarget by remember { mutableStateOf<Any?>(null) }
     var showNewLineDialog by remember { mutableStateOf(false) }
@@ -95,7 +94,7 @@ fun HomeScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TransNoteTopBar(
-                title = "途记交通备忘录",
+                title = if (tab == HomeTab.BUS) "公交线路" else "地铁线路",
                 actions = {
                     IconButton(onClick = { showNewLineDialog = true }) {
                         Icon(
@@ -116,22 +115,6 @@ fun HomeScreen(
                 cityName = state.selectedCityName.ifBlank { "默认城市" },
                 onClick = { showCityDialog = true }
             )
-            TabRow(
-                selectedTabIndex = tab.ordinal,
-                containerColor = TransNoteTheme.colors.navBar,
-                contentColor = MaterialTheme.colorScheme.primary
-            ) {
-                Tab(
-                    selected = tab == HomeTab.BUS,
-                    onClick = { tab = HomeTab.BUS },
-                    text = { Text("公交线路 (${state.busLines.size})") }
-                )
-                Tab(
-                    selected = tab == HomeTab.METRO,
-                    onClick = { tab = HomeTab.METRO },
-                    text = { Text("地铁线路 (${state.metroLines.size})") }
-                )
-            }
 
             FilterRow(
                 favoriteOnly = state.favoriteOnly,
@@ -473,7 +456,7 @@ private fun BusLineList(
         return
     }
     LazyColumn(
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 104.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxSize()
     ) {
@@ -482,9 +465,8 @@ private fun BusLineList(
                 LineCard(
                     title = line.lineName,
                     subtitle = buildString {
-                        if (line.firstBus.isNotBlank() || line.lastBus.isNotBlank()) {
-                            append("首末班 ${line.firstBus.ifBlank { "--" }}~${line.lastBus.ifBlank { "--" }}")
-                        }
+                        formatFirstLastBus(line.firstBus, line.lastBus)
+                            .let { if (it.isNotBlank()) append(it) }
                         if (line.fare.isNotBlank()) {
                             if (isNotEmpty()) append(" · ")
                             append("票价 ${line.fare}")
@@ -534,7 +516,7 @@ private fun MetroLineList(
         return
     }
     LazyColumn(
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 104.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxSize()
     ) {
@@ -543,9 +525,8 @@ private fun MetroLineList(
                 LineCard(
                     title = line.lineName,
                     subtitle = buildString {
-                        if (line.firstBus.isNotBlank() || line.lastBus.isNotBlank()) {
-                            append("首末班 ${line.firstBus.ifBlank { "--" }}~${line.lastBus.ifBlank { "--" }}")
-                        }
+                        formatFirstLastBus(line.firstBus, line.lastBus)
+                            .let { if (it.isNotBlank()) append(it) }
                         if (line.fare.isNotBlank()) {
                             if (isNotEmpty()) append(" · ")
                             append("票价 ${line.fare}")

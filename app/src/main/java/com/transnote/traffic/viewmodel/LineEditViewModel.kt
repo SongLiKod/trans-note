@@ -372,7 +372,16 @@ class LineEditViewModel(
                     s.copy(destination = line.endStop)
                 }
             }
-            val updated = withDestination.copy(
+            // 首末站（首发站 / 末站）信息写入开往方向注释由末站承担；时刻表按当前类型 / 方向填充
+            val withTimetable = if (line.timetable.isBlank()) withDestination else when (s.lineType) {
+                LineType.BUS -> if (s.editDirection == BusStationEntity.DIRECTION_UP) {
+                    withDestination.copy(upTimetable = line.timetable)
+                } else {
+                    withDestination.copy(downTimetable = line.timetable)
+                }
+                LineType.METRO -> withDestination.copy(timetable = line.timetable)
+            }
+            val updated = withTimetable.copy(
                 lineName = cleanedName,
                 firstBus = line.startTime.ifBlank { s.firstBus },
                 lastBus = line.endTime.ifBlank { s.lastBus },

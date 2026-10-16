@@ -62,7 +62,9 @@ import com.transnote.traffic.data.database.BusStationWithTransfers
 import com.transnote.traffic.data.database.StationMarkerEntity
 import com.transnote.traffic.repository.PassingBusLine
 import com.transnote.traffic.repository.TransNoteRepository
+import com.transnote.traffic.ui.components.AmapUpdateDialog
 import com.transnote.traffic.ui.components.CollapsibleTrackMapLayout
+import com.transnote.traffic.ui.components.CompactIconButton
 import com.transnote.traffic.ui.components.ConfirmDialog
 import com.transnote.traffic.utils.AmapBusLine
 import com.transnote.traffic.ui.components.DragReorderColumn
@@ -81,6 +83,7 @@ import com.transnote.traffic.ui.theme.LineColors
 import com.transnote.traffic.ui.theme.TransNoteTheme
 import com.transnote.traffic.utils.CoordinateUtils
 import com.transnote.traffic.utils.StationNameParser
+import com.transnote.traffic.utils.formatFirstLastBus
 import com.transnote.traffic.viewmodel.BusLineDetailViewModel
 import com.transnote.traffic.viewmodel.containerViewModelFactory
 
@@ -234,9 +237,8 @@ fun BusLineDetailScreen(
                     Column {
                         val info = state.line?.let { line ->
                             buildList {
-                                if (line.firstBus.isNotBlank() || line.lastBus.isNotBlank()) {
-                                    add("首末班 ${line.firstBus.ifBlank { "--" }}~${line.lastBus.ifBlank { "--" }}")
-                                }
+                                formatFirstLastBus(line.firstBus, line.lastBus)
+                                    .let { if (it.isNotBlank()) add(it) }
                                 if (line.fare.isNotBlank()) add("票价 ${line.fare}")
                             }.joinToString(" · ")
                         }.orEmpty()
@@ -371,12 +373,6 @@ fun BusLineDetailScreen(
 
             item {
                 SectionTitle("站点列表（${state.stations.size}）")
-                Text(
-                    if (editMode) "编辑中：点击站点可修改，长按可拖拽排序"
-                    else "只读展示；点击站点可在地图上定位高亮，点右上角「编辑」后可增删、拖拽或修改",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TransNoteTheme.colors.hintText
-                )
             }
 
             item {
@@ -531,105 +527,6 @@ fun BusLineDetailScreen(
     }
 }
 
-/** 从高德更新已有线路：输入/确认线路名，选择结果后更新线路与站点 */
-@Composable
-private fun AmapUpdateDialog(
-    lineName: String,
-    busy: Boolean,
-    message: String?,
-    candidates: List<AmapBusLine>,
-    onSearch: (String) -> Unit,
-    onApply: (AmapBusLine) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var keyword by remember { mutableStateOf(lineName) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        shape = MaterialTheme.shapes.large,
-        title = { Text("从高德更新线路") },
-        text = {
-            Column {
-                Text(
-                    "按线路名重新获取首末班、开往方向与站点坐标（保留原备注 / 图片），并重新识别站点周边地铁 / 火车站 / 机场。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TransNoteTheme.colors.hintText
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = keyword,
-                        onValueChange = { keyword = it },
-                        label = { Text("线路名称 / 编号") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    IconButton(onClick = { onSearch(keyword) }, enabled = !busy) {
-                        if (busy) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        } else {
-                            Icon(
-                                Icons.Filled.Search,
-                                contentDescription = "查询",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                }
-                message?.let {
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        it,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TransNoteTheme.colors.hintText
-                    )
-                }
-                if (candidates.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
-                        items(candidates, key = { it.id + it.name }) { line ->
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onApply(line) }
-                                    .padding(vertical = 10.dp)
-                            ) {
-                                Text(line.name, style = MaterialTheme.typography.bodyLarge)
-                                val detail = buildString {
-                                    val route = listOf(line.startStop, line.endStop)
-                                        .filter { it.isNotBlank() }.joinToString(" → ")
-                                    if (route.isNotBlank()) append(route)
-                                    if (line.stations.isNotEmpty()) {
-                                        if (isNotEmpty()) append(" · ")
-                                        append("${line.stations.size} 站")
-                                    }
-                                    if (line.startTime.isNotBlank()) {
-                                        if (isNotEmpty()) append(" · ")
-                                        append("首末班 ${line.startTime}~${line.endTime}")
-                                    }
-                                }
-                                if (detail.isNotBlank()) {
-                                    Spacer(Modifier.height(2.dp))
-                                    Text(
-                                        detail,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = TransNoteTheme.colors.hintText,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("关闭") }
-        }
-    )
-}
-
 /**
  * 「经过该站点的线路」弹窗：按坐标/同名聚合所有线路，标明上行/下行与开往方向。
  */
@@ -739,25 +636,24 @@ private fun BusStationTimelineItem(
                 Icon(
                     Icons.Filled.DragHandle,
                     contentDescription = "拖拽排序",
-                    tint = TransNoteTheme.colors.hintText
+                    tint = TransNoteTheme.colors.hintText,
+                    modifier = Modifier.size(20.dp)
                 )
-                IconButton(onClick = onDelete) {
-                    Icon(
-                        Icons.Filled.Delete,
-                        contentDescription = "删除站点",
-                        tint = TransNoteTheme.colors.danger
-                    )
-                }
+                CompactIconButton(
+                    onClick = onDelete,
+                    contentDescription = "删除站点",
+                    icon = Icons.Filled.Delete,
+                    tint = TransNoteTheme.colors.danger
+                )
             }
             // 站点右侧按钮：查看经过该站点的所有公交线路（可在设置中关闭）
             if (showPassing && CoordinateUtils.isValid(station.latitude, station.longitude)) {
-                IconButton(onClick = onShowPassing) {
-                    Icon(
-                        Icons.Filled.DirectionsBus,
-                        contentDescription = "经过线路",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
+                CompactIconButton(
+                    onClick = onShowPassing,
+                    contentDescription = "经过线路",
+                    icon = Icons.Filled.DirectionsBus,
+                    tint = MaterialTheme.colorScheme.primary
+                )
             }
         }
     ) {
