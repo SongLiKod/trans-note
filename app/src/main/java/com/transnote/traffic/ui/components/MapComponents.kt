@@ -193,6 +193,8 @@ fun LocationPickerMap(
             setMultiTouchControls(true)
             setUseDataConnection(true)
             setTilesScaledToDpi(true)
+            minZoomLevel = 3.0
+            maxZoomLevel = 18.0
             controller.setZoom(15.0)
             controller.setCenter(initialPoint)
         }
