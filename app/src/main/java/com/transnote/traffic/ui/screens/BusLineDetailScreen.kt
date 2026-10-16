@@ -83,6 +83,7 @@ import com.transnote.traffic.ui.theme.LineColors
 import com.transnote.traffic.ui.theme.TransNoteTheme
 import com.transnote.traffic.utils.CoordinateUtils
 import com.transnote.traffic.utils.StationNameParser
+import com.transnote.traffic.utils.formatDistanceKm
 import com.transnote.traffic.utils.formatFirstLastBus
 import com.transnote.traffic.viewmodel.BusLineDetailViewModel
 import com.transnote.traffic.viewmodel.containerViewModelFactory
@@ -404,6 +405,7 @@ fun BusLineDetailScreen(
                             lineColorHex = state.line?.colorHex.orEmpty(),
                             markers = state.mapContext.markers,
                             metroStationLabels = state.mapContext.metroStationLabels,
+                            metroStationGeo = state.mapContext.metroStationGeo,
                             onClick = { onOpenStation(wrapper.station.id) },
                             onSelect = {},
                             onDelete = { pendingDeleteStation = wrapper.station },
@@ -428,6 +430,7 @@ fun BusLineDetailScreen(
                                 lineColorHex = state.line?.colorHex.orEmpty(),
                                 markers = state.mapContext.markers,
                                 metroStationLabels = state.mapContext.metroStationLabels,
+                                metroStationGeo = state.mapContext.metroStationGeo,
                                 onClick = { onOpenStation(wrapper.station.id) },
                                 onSelect = { selectedKey = wrapper.station.id },
                                 onDelete = {},
@@ -618,6 +621,7 @@ private fun BusStationTimelineItem(
     lineColorHex: String,
     markers: List<StationMarkerEntity>,
     metroStationLabels: Map<Long, String>,
+    metroStationGeo: Map<Long, Pair<Double, Double>>,
     onClick: () -> Unit,
     onSelect: () -> Unit,
     onDelete: () -> Unit,
@@ -627,6 +631,22 @@ private fun BusStationTimelineItem(
 ) {
     val station = wrapper.station
     val markerNames = markers.filter { it.id in station.markerIds }.map { it.name }
+    // 未绑定具体出口、但站点带「地铁」标记时，查找最近的地铁站点，显示线路 / 站名 / 距离
+    val nearestMetro: Pair<String, Double>? = remember(
+        metroStationGeo, metroStationLabels, markerNames, station.latitude, station.longitude
+    ) {
+        val lat = station.latitude
+        val lng = station.longitude
+        val metroMarked = markerNames.contains("地铁") || station.isMetroTransfer
+        if (metroMarked && CoordinateUtils.isValid(lat, lng)) {
+            metroStationGeo.minByOrNull { (_, c) ->
+                CoordinateUtils.distanceMeters(lat!!, lng!!, c.first, c.second)
+            }?.let { (id, c) ->
+                val d = CoordinateUtils.distanceMeters(lat!!, lng!!, c.first, c.second)
+                (metroStationLabels[id] ?: "地铁站") to d
+            }
+        } else null
+    }
     StationTimelineRow(
         index = index,
         total = total,
@@ -702,30 +722,40 @@ private fun BusStationTimelineItem(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        // 关联地铁信息：换乘的地铁线路 / 站点 / 出入口
-        wrapper.entrances.forEach { entrance ->
-            Spacer(Modifier.height(2.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clickable {
-                    onOpenEntrance(entrance.metroStationId, entrance.id)
+        // 关联地铁信息：仅显示「x号线 · 站点 · 距离km」
+        val transfers = wrapper.entrances.distinctBy { it.metroStationId }
+        if (transfers.isNotEmpty()) {
+            transfers.forEach { entrance ->
+                Spacer(Modifier.height(2.dp))
+                val geo = metroStationGeo[entrance.metroStationId]
+                val distanceText = if (geo != null && CoordinateUtils.isValid(station.latitude, station.longitude)) {
+                    val d = CoordinateUtils.distanceMeters(
+                        station.latitude!!, station.longitude!!, geo.first, geo.second
+                    )
+                    " · ${formatDistanceKm(d)}"
+                } else {
+                    ""
                 }
-            ) {
-                Icon(
-                    Icons.Filled.DirectionsSubway,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(Modifier.width(4.dp))
                 Text(
-                    "换乘 ${metroStationLabels[entrance.metroStationId] ?: "地铁站"} · ${entrance.name}口",
+                    "${metroStationLabels[entrance.metroStationId] ?: "地铁"}$distanceText",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.clickable {
+                        onOpenEntrance(entrance.metroStationId, entrance.id)
+                    }
                 )
             }
+        } else if (nearestMetro != null) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                "${nearestMetro.first} · ${formatDistanceKm(nearestMetro.second)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }

@@ -36,6 +36,8 @@ data class LineMapContext(
     val cityCenter: Pair<Double, Double>? = null,
     val searchStations: List<CityStation> = emptyList(),
     val metroStationLabels: Map<Long, String> = emptyMap(),
+    /** 地铁站点 id → 坐标，用于计算公交站点到地铁站点的距离 */
+    val metroStationGeo: Map<Long, Pair<Double, Double>> = emptyMap(),
     val markers: List<StationMarkerEntity> = emptyList()
 ) {
     /** 解析站点标记名称（按标记列表顺序去重） */
@@ -106,7 +108,8 @@ class BusLineDetailViewModel(
             mapContext.value = LineMapContext(
                 cityCenter = repo.getCityCenter(line.cityId),
                 searchStations = repo.getCityStations(line.cityId),
-                metroStationLabels = repo.getMetroStationLabels()
+                metroStationLabels = repo.getMetroStationLabels(),
+                metroStationGeo = repo.getMetroStationGeoMap()
             )
         }
         // 站点变化时重新计算「有其它线路经过」的站点集合

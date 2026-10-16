@@ -305,9 +305,27 @@ class TransNoteRepository(
     suspend fun getMetroStationLabels(): Map<Long, String> {
         val lineNames = db.metroLineDao().getAllOnce().associate { it.id to it.lineName }
         return db.metroStationDao().getAllOnce().associate {
-            it.id to "${lineNames[it.lineId] ?: "地铁"} · ${it.name}"
+            it.id to "${shortMetroLineName(lineNames[it.lineId])} · ${it.name}"
         }
     }
+
+    /** 精简地铁线路名：去掉「城市轨道交通 / 轨道交通 / 地铁」等前缀，仅保留如「1号线」 */
+    private fun shortMetroLineName(name: String?): String {
+        if (name.isNullOrBlank()) return "地铁"
+        return name.trim()
+            .removePrefix("城市轨道交通")
+            .removePrefix("轨道交通")
+            .removePrefix("地铁线路")
+            .removePrefix("地铁")
+            .trim()
+            .ifBlank { name.trim() }
+    }
+
+    /** 地铁站点 id → 坐标（仅含已标注坐标的站点），用于计算公交站点到地铁站点的距离 */
+    suspend fun getMetroStationGeoMap(): Map<Long, Pair<Double, Double>> =
+        db.metroStationDao().getAllOnce()
+            .filter { CoordinateUtils.isValid(it.latitude, it.longitude) }
+            .associate { it.id to (it.latitude!! to it.longitude!!) }
 
     // ================= 公交线路 =================
 
