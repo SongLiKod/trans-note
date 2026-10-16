@@ -49,6 +49,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.transnote.traffic.AppContainer
+import com.transnote.traffic.BuildConfig
+import com.transnote.traffic.ui.AboutContent
 import com.transnote.traffic.ui.components.InfoRow
 import com.transnote.traffic.ui.components.SectionTitle
 import com.transnote.traffic.ui.components.TransNoteCard
@@ -303,6 +305,7 @@ fun SettingsScreen(
             TransNoteCard {
                 Column {
                     InfoRow("应用名称", "途记交通备忘录")
+                    InfoRow("版本", "${BuildConfig.VERSION_NAME}（${BuildConfig.VERSION_CODE}）")
                     InfoRow("包名", "com.transnote.traffic")
                     InfoRow("存储方式", "纯本地（无后端、无上传）")
                     InfoRow("隐私", "无广告、无推送、无埋点")
@@ -313,6 +316,16 @@ fun SettingsScreen(
                         color = TransNoteTheme.colors.hintText
                     )
                 }
+            }
+
+            Spacer(Modifier.height(20.dp))
+            SectionTitle("使用声明")
+            TransNoteCard {
+                Text(
+                    AboutContent.DISCLAIMER,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TransNoteTheme.colors.hintText
+                )
             }
 
             Spacer(Modifier.height(24.dp))

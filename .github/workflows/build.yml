@@ -140,12 +140,15 @@ jobs:
 
   release:
     name: Publish Release
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.version != '')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: [test, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -155,12 +158,17 @@ jobs:
       - name: Resolve tag
         id: tag
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.version }}" ]]; then
-            TAG="${{ inputs.version }}"
-            PRE="${{ inputs.prerelease }}"
-          else
+          INPUT_VERSION="${{ inputs.version }}"
+          PRE="${{ inputs.prerelease }}"
+          [ -z "$PRE" ] && PRE="false"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             TAG="${GITHUB_REF#refs/tags/}"
-            PRE="false"
+          elif [[ -n "$INPUT_VERSION" ]]; then
+            TAG="$INPUT_VERSION"
+          else
+            # 未显式提供版本：使用 gradle.properties 中的唯一版本来源
+            APP_VERSION="$(grep -E '^APP_VERSION_NAME=' gradle.properties | head -n1 | cut -d= -f2 | tr -d '[:space:]')"
+            TAG="v${APP_VERSION}"
           fi
           if [[ "$TAG" == *-* ]]; then
             PRE="true"

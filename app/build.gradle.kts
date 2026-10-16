@@ -5,6 +5,17 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+// 版本号唯一来源：gradle.properties 的 APP_VERSION_NAME（语义化 x.y.z）。
+// versionCode 由版本名自动计算生成，无需单独维护：major*10000 + minor*100 + patch。
+val appVersionName: String = providers.gradleProperty("APP_VERSION_NAME").get()
+val appVersionCode: Int = run {
+    val parts = appVersionName.split(".")
+    val major = parts.getOrNull(0)?.toIntOrNull() ?: 0
+    val minor = parts.getOrNull(1)?.toIntOrNull() ?: 0
+    val patch = parts.getOrNull(2)?.toIntOrNull() ?: 0
+    major * 10000 + minor * 100 + patch
+}
+
 android {
     namespace = "com.transnote.traffic"
     compileSdk = 34
@@ -13,8 +24,8 @@ android {
         applicationId = "com.transnote.traffic"
         minSdk = 29
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -47,6 +58,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {
