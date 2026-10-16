@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.transnote.traffic.ui.theme.TransNoteTheme
 import com.transnote.traffic.utils.AmapBusLine
+import com.transnote.traffic.utils.formatFirstLastBus
 
 /**
  * 从高德更新已有（公交 / 地铁）线路：输入 / 确认线路名，选择结果后更新线路与站点。
@@ -108,9 +109,10 @@ fun AmapUpdateDialog(
                                         if (isNotEmpty()) append(" · ")
                                         append("${line.stations.size} 站")
                                     }
-                                    if (line.startTime.isNotBlank()) {
+                                    val fl = formatFirstLastBus(line.startTime, line.endTime)
+                                    if (fl.isNotBlank()) {
                                         if (isNotEmpty()) append(" · ")
-                                        append("首末班 ${line.startTime}~${line.endTime}")
+                                        append(fl)
                                     }
                                     if (line.timetable.isNotBlank()) {
                                         if (isNotEmpty()) append(" · ")

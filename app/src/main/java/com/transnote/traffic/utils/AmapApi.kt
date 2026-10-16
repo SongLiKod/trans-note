@@ -439,9 +439,11 @@ object AmapApi {
         return list
     }
 
-    /** 高德时间字段可能为 "05:10"、"05:10-23:30" 或 "0510"，统一取首段并规整为 HH:MM */
-    private fun formatAmapTime(raw: String): String =
-        normalizeClock(raw.trim().substringBefore("-").substringBefore("—").trim())
+    /** 高德时间字段可能为 "05:10"、"05:10-23:30" 或 "0510"，统一取首段并规整为 HH:MM；空值（[] 等）归一为空串 */
+    private fun formatAmapTime(raw: String): String {
+        val first = cleanField(raw.trim().substringBefore("-").substringBefore("—").trim())
+        return cleanField(normalizeClock(first))
+    }
 
     /** 把 "0510" / "5:10" 规整为 "05:10"；无法识别时原样返回 */
     private fun normalizeClock(value: String): String {

@@ -113,6 +113,10 @@ private fun rememberLifecycleMapView(config: MapView.() -> Unit = {}): MapView {
             setTilesScaledToDpi(true)
             minZoomLevel = 3.0
             maxZoomLevel = 18.0
+            // 给一个合法的初始 zoom / 中心，避免 osmdroid 在投影 zoom 为 NaN 时
+            // zoomToBoundingBox 内部死循环（osmdroid bug #2028）导致主线程卡死。
+            controller.setZoom(4.0)
+            controller.setCenter(GeoPoint(CHINA_CENTER_LAT, CHINA_CENTER_LNG))
             config()
         }
     }
@@ -312,13 +316,14 @@ private class TrackOverlay(
  * 用布局监听而非轮询帧，确保「先离屏预取、后滚入可视区」的地图也能在布局完成后正确定位相机。
  */
 private suspend fun awaitMapLayout(mapView: MapView) = suspendCancellableCoroutine<Unit> { cont ->
-    if (mapView.isLayoutOccurred()) {
+    fun ready() = mapView.isLayoutOccurred() && mapView.width > 0 && mapView.height > 0
+    if (ready()) {
         cont.resume(Unit)
         return@suspendCancellableCoroutine
     }
     var listener: View.OnLayoutChangeListener? = null
     listener = View.OnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
-        if (mapView.isLayoutOccurred()) {
+        if (ready()) {
             v.removeOnLayoutChangeListener(listener)
             if (cont.isActive) cont.resume(Unit)
         }
@@ -384,6 +389,12 @@ private fun TrackMapCanvas(
         // 造成主线程死循环（应用无响应）。必须等布局完成后再操作相机。
         awaitMapLayout(mapView)
 
+        // 双保险：即便已完成布局，zoom 仍可能非法（尚未设置过缩放），
+        // 直接调用 zoomToBoundingBox 会触发死循环——先落到一个合法 zoom。
+        if (!mapView.zoomLevelDouble.isFinite()) {
+            mapView.controller.setZoom(12.0)
+        }
+
         val target = highlightKey?.let { key -> points.firstOrNull { it.key == key } }
         when {
             target != null -> {
@@ -399,7 +410,7 @@ private fun TrackMapCanvas(
                     if (geo.size == 1) {
                         mapView.controller.setZoom(16.0)
                         mapView.controller.setCenter(geo.first())
-                    } else {
+                    } else if (mapView.zoomLevelDouble.isFinite()) {
                         mapView.zoomToBoundingBox(
                             BoundingBox.fromGeoPoints(geo),
                             false,

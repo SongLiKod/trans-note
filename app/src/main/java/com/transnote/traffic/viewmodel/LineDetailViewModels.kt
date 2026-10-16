@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -95,6 +96,10 @@ class BusLineDetailViewModel(
     private val _amapMessage = MutableStateFlow<String?>(null)
     val amapMessage: StateFlow<String?> = _amapMessage.asStateFlow()
 
+    /** 本线路中「有其它线路经过」的站点 id（决定是否显示「经过线路」按钮） */
+    private val _passingStationIds = MutableStateFlow<Set<Long>>(emptySet())
+    val passingStationIds: StateFlow<Set<Long>> = _passingStationIds.asStateFlow()
+
     init {
         viewModelScope.launch {
             val line = repo.getBusLine(lineId) ?: return@launch
@@ -103,6 +108,13 @@ class BusLineDetailViewModel(
                 searchStations = repo.getCityStations(line.cityId),
                 metroStationLabels = repo.getMetroStationLabels()
             )
+        }
+        // 站点变化时重新计算「有其它线路经过」的站点集合
+        viewModelScope.launch {
+            uiState
+                .map { st -> st.stations.joinToString(",") { it.station.id.toString() } }
+                .distinctUntilChanged()
+                .collect { _passingStationIds.value = repo.findBusStationsWithOtherLines(lineId) }
         }
     }
 

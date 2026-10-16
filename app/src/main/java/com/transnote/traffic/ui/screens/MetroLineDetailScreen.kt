@@ -201,7 +201,7 @@ fun MetroLineDetailScreen(
                         isTransfer = wrapper.entrances.isNotEmpty(),
                         key = s.id,
                         colorHex = s.colorHex,
-                        markers = state.mapContext.markerNames(s.markerIds)
+                        markers = state.mapContext.markerNames(s.markerIds).filter { it != "地铁" }
                     )
                 } else null
             },
@@ -213,6 +213,7 @@ fun MetroLineDetailScreen(
             },
             emptyHint = "为地铁站点设置地图坐标后将在此绘制轨迹",
             lineColor = lineColor,
+            showPanel = selectedKey != null,
             modifier = Modifier.padding(padding)
         ) { listModifier ->
         LazyColumn(
@@ -469,7 +470,9 @@ private fun MetroStationTimelineItem(
     onOpenEntrances: () -> Unit
 ) {
     val station = wrapper.station
-    val markerNames = markers.filter { it.id in station.markerIds }.map { it.name }
+    val markerNames = markers.filter { it.id in station.markerIds }
+        .map { it.name }
+        .filter { it != "地铁" }
     StationTimelineRow(
         index = index,
         total = total,

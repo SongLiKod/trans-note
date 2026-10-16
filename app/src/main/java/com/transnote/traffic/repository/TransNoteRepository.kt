@@ -242,6 +242,31 @@ class TransNoteRepository(
     }
 
     /**
+     * 返回指定公交线路中「有其它线路经过」的站点 id 集合。
+     * 用于决定是否显示「经过线路」按钮——只有本线经过的站点无需该按钮。
+     * 同站判定与 [findPassingBusLines] 一致。
+     */
+    suspend fun findBusStationsWithOtherLines(lineId: Long): Set<Long> {
+        val all = db.busStationDao().getAllOnce()
+            .filter { CoordinateUtils.isValid(it.latitude, it.longitude) }
+        val source = all.filter { it.lineId == lineId }
+        val others = all.filter { it.lineId != lineId }
+        if (source.isEmpty() || others.isEmpty()) return emptySet()
+        val result = HashSet<Long>()
+        source.forEach { s ->
+            val sLat = s.latitude!!
+            val sLng = s.longitude!!
+            val sName = normalizeStationName(s.name)
+            val hit = others.any { o ->
+                val d = CoordinateUtils.distanceMeters(sLat, sLng, o.latitude!!, o.longitude!!)
+                d <= 100.0 || (normalizeStationName(o.name) == sName && d <= 500.0)
+            }
+            if (hit) result.add(s.id)
+        }
+        return result
+    }
+
+    /**
      * 每个地铁站点可换乘的其它地铁线路（跨线路聚合，用于换乘站显示两条线颜色）。
      * 同站判定：坐标距离很近（≤100m），或站名归一化后相同且距离较近（≤500m）。
      */

@@ -54,8 +54,10 @@ private val MiniContentHeight = 120.dp
  * 四档高度锚点：隐藏（仅保留手柄，地图不渲染）/ 迷你 / 半屏 / 展开；
  * 拖动手柄调整高度并在松手时吸附到最近一档，点击手柄循环切换下一档。
  *
- * 列表通过 [listContent] 提供，会收到一个 `weight(1f)` 修饰符用于占满剩余空间；
- * 面板大小变化时（含隐藏 / 展开）不会因列表点击而改变——由调用方控制 [selectedKey]。
+ * [showPanel] 为 false 时整个底部面板（手柄 + 地图）都不显示，列表占满全屏；
+ * 调用方可用它实现「未选中站点时不显示轨迹地图面板」。
+ *
+ * 列表通过 [listContent] 提供，会收到一个 `weight(1f)` 修饰符用于占满剩余空间。
  */
 @Composable
 fun CollapsibleTrackMapLayout(
@@ -67,6 +69,7 @@ fun CollapsibleTrackMapLayout(
     searchItems: List<MapSearchItem> = emptyList(),
     emptyHint: String = "暂无坐标点，请为站点设置地图位置",
     lineColor: Color = MaterialTheme.colorScheme.primary,
+    showPanel: Boolean = true,
     listContent: @Composable (Modifier) -> Unit
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -78,14 +81,17 @@ fun CollapsibleTrackMapLayout(
         val maxPx = with(density) { (maxHeight - 64.dp).coerceAtLeast(280.dp).toPx() }
         val halfPx = ((minPx + maxPx) / 2f).coerceAtLeast(minPx)
         val anchors = listOf(hiddenPx, minPx, halfPx, maxPx)
+        // 地图正文区显示所需的最小高度：低于该值时不渲染地图，
+        // 避免在展开动画初期以 0 / 极小高度创建 osmdroid 地图（其投影 zoom 为 NaN 会导致死循环卡死）。
+        val minMapContentPx = with(density) { 60.dp.toPx() }
 
         var panelHeightPx by remember { mutableFloatStateOf(Float.NaN) }
         val scope = rememberCoroutineScope()
-        // 默认最小化（仅保留底部手柄，不显示地图）
+        // 首次显示时落在「迷你」档（面板仅在选中站点后出现，直接展示地图）
         val currentPx = if (panelHeightPx.isFinite() && panelHeightPx > 0f) {
             panelHeightPx.coerceIn(hiddenPx, maxPx)
-        } else hiddenPx
-        LaunchedEffect(maxPx) { if (!panelHeightPx.isFinite()) panelHeightPx = hiddenPx }
+        } else minPx
+        LaunchedEffect(maxPx) { if (!panelHeightPx.isFinite()) panelHeightPx = minPx }
 
         fun animateTo(target: Float) {
             scope.launch {
@@ -104,6 +110,7 @@ fun CollapsibleTrackMapLayout(
         Column(modifier = Modifier.fillMaxSize()) {
             listContent(Modifier.weight(1f))
 
+            if (showPanel) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -111,10 +118,10 @@ fun CollapsibleTrackMapLayout(
             ) {
                 TrackMapDragHandle(
                     collapsed = currentPx <= hiddenPx + 1f,
-                    onCycle = { nextAnchor() },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(HandleHeight)
+                        .clickable { nextAnchor() }
                         .draggable(
                             orientation = Orientation.Vertical,
                             state = rememberDraggableState { delta ->
@@ -126,7 +133,7 @@ fun CollapsibleTrackMapLayout(
                             }
                         )
                 )
-                if (currentPx > hiddenPx + 1f) {
+                if (currentPx - handlePx > minMapContentPx) {
                     StationTrackMap(
                         points = points,
                         modifier = Modifier
@@ -142,6 +149,7 @@ fun CollapsibleTrackMapLayout(
                     )
                 }
             }
+            }
         }
     }
 }
@@ -150,11 +158,10 @@ fun CollapsibleTrackMapLayout(
 @Composable
 private fun TrackMapDragHandle(
     collapsed: Boolean,
-    onCycle: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
-        modifier = modifier.clickable(onClick = onCycle).padding(horizontal = 16.dp),
+        modifier = modifier.padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {

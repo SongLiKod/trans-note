@@ -126,6 +126,8 @@ fun BusLineDetailScreen(
     var pendingDeleteStation by remember { mutableStateOf<BusStationEntity?>(null) }
     // 点击站点后在（固定在底部的）地图上高亮并居中
     var selectedKey by remember { mutableStateOf<Long?>(null) }
+    // 本线路中确有其它线路经过的站点（否则隐藏「经过线路」按钮）
+    val passingStationIds by viewModel.passingStationIds.collectAsStateWithLifecycle()
 
     LaunchedEffect(state.direction) { selectedKey = null }
 
@@ -225,6 +227,7 @@ fun BusLineDetailScreen(
                 MapSearchItem(it.name, it.latitude, it.longitude, it.subtitle, it.markers)
             },
             lineColor = lineColor,
+            showPanel = selectedKey != null,
             modifier = Modifier.padding(padding)
         ) { listModifier ->
         LazyColumn(
@@ -405,7 +408,8 @@ fun BusLineDetailScreen(
                             onSelect = {},
                             onDelete = { pendingDeleteStation = wrapper.station },
                             onShowPassing = { passingStation = wrapper.station },
-                            onOpenEntrance = onOpenEntrance
+                            onOpenEntrance = onOpenEntrance,
+                            hasPassingLines = wrapper.station.id in passingStationIds
                         )
                     }
                 } else {
@@ -428,7 +432,8 @@ fun BusLineDetailScreen(
                                 onSelect = { selectedKey = wrapper.station.id },
                                 onDelete = {},
                                 onShowPassing = { passingStation = wrapper.station },
-                                onOpenEntrance = onOpenEntrance
+                                onOpenEntrance = onOpenEntrance,
+                                hasPassingLines = wrapper.station.id in passingStationIds
                             )
                         }
                     }
@@ -617,7 +622,8 @@ private fun BusStationTimelineItem(
     onSelect: () -> Unit,
     onDelete: () -> Unit,
     onShowPassing: () -> Unit,
-    onOpenEntrance: (Long, Long) -> Unit
+    onOpenEntrance: (Long, Long) -> Unit,
+    hasPassingLines: Boolean
 ) {
     val station = wrapper.station
     val markerNames = markers.filter { it.id in station.markerIds }.map { it.name }
@@ -646,8 +652,10 @@ private fun BusStationTimelineItem(
                     tint = TransNoteTheme.colors.danger
                 )
             }
-            // 站点右侧按钮：查看经过该站点的所有公交线路（可在设置中关闭）
-            if (showPassing && CoordinateUtils.isValid(station.latitude, station.longitude)) {
+            // 站点右侧按钮：仅当确有其它线路经过时显示
+            if (showPassing && hasPassingLines &&
+                CoordinateUtils.isValid(station.latitude, station.longitude)
+            ) {
                 CompactIconButton(
                     onClick = onShowPassing,
                     contentDescription = "经过线路",

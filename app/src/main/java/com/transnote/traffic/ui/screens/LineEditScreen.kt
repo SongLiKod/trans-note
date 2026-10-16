@@ -77,6 +77,7 @@ import com.transnote.traffic.ui.theme.LineColors
 import com.transnote.traffic.ui.theme.TransNoteTheme
 import com.transnote.traffic.utils.AmapBusLine
 import com.transnote.traffic.utils.StationNameParser
+import com.transnote.traffic.utils.formatFirstLastBus
 import com.transnote.traffic.viewmodel.LineEditUiState
 import com.transnote.traffic.viewmodel.LineEditViewModel
 import com.transnote.traffic.viewmodel.LineType
@@ -681,9 +682,10 @@ private fun AmapImportDialog(
                                         if (isNotEmpty()) append(" · ")
                                         append("${line.stations.size} 站")
                                     }
-                                    if (line.startTime.isNotBlank()) {
+                                    val fl = formatFirstLastBus(line.startTime, line.endTime)
+                                    if (fl.isNotBlank()) {
                                         if (isNotEmpty()) append(" · ")
-                                        append("首末班 ${line.startTime}~${line.endTime}")
+                                        append(fl)
                                     }
                                     if (line.timetable.isNotBlank()) {
                                         if (isNotEmpty()) append(" · ")
