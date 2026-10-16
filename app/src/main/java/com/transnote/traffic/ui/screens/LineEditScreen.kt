@@ -62,6 +62,7 @@ import com.transnote.traffic.ui.components.ThemedDivider
 import com.transnote.traffic.ui.components.TransNoteCard
 import com.transnote.traffic.ui.components.TransNoteTopBar
 import com.transnote.traffic.ui.theme.TransNoteTheme
+import com.transnote.traffic.utils.StationNameParser
 import com.transnote.traffic.viewmodel.LineEditViewModel
 import com.transnote.traffic.viewmodel.LineType
 import com.transnote.traffic.viewmodel.StationDraft
@@ -397,7 +398,7 @@ fun LineEditScreen(
             },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
-                    viewModel.addStations(batchText.split(Regex("[\\n、,，→>]+")))
+                    viewModel.addStations(StationNameParser.parse(batchText))
                     showBatchAdd = false
                 }) { Text("添加") }
             },

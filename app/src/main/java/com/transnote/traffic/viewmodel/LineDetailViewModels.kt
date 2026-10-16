@@ -80,19 +80,17 @@ class BusLineDetailViewModel(
         direction.value = value
     }
 
-    fun addStation(name: String) {
-        if (name.isBlank()) return
-        viewModelScope.launch {
-            val count = repo.getBusStations(lineId, direction.value).size
-            repo.saveBusStation(
-                BusStationEntity(
-                    lineId = lineId,
-                    direction = direction.value,
-                    orderIndex = count,
-                    name = name.trim()
-                )
-            )
-        }
+    fun addStation(name: String) = addStations(listOf(name))
+
+    /**
+     * 批量添加站点：单次串行写入，严格保持录入顺序。
+     * 不能对每个名称各起一个协程，否则会并发读到相同的序号起点导致顺序错乱。
+     */
+    fun addStations(names: List<String>) {
+        val cleaned = names.map { it.trim() }.filter { it.isNotEmpty() }
+        if (cleaned.isEmpty()) return
+        val dir = direction.value
+        viewModelScope.launch { repo.addBusStations(lineId, dir, cleaned) }
     }
 
     fun deleteStation(station: BusStationEntity) {
@@ -154,18 +152,13 @@ class MetroLineDetailViewModel(
         }
     }
 
-    fun addStation(name: String) {
-        if (name.isBlank()) return
-        viewModelScope.launch {
-            val count = repo.getMetroStations(lineId).size
-            repo.saveMetroStation(
-                com.transnote.traffic.data.database.MetroStationEntity(
-                    lineId = lineId,
-                    orderIndex = count,
-                    name = name.trim()
-                )
-            )
-        }
+    fun addStation(name: String) = addStations(listOf(name))
+
+    /** 批量添加站点：单次串行写入，严格保持录入顺序 */
+    fun addStations(names: List<String>) {
+        val cleaned = names.map { it.trim() }.filter { it.isNotEmpty() }
+        if (cleaned.isEmpty()) return
+        viewModelScope.launch { repo.addMetroStations(lineId, cleaned) }
     }
 
     fun deleteStation(stationId: Long) {

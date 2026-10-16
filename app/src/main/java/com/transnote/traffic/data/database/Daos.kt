@@ -98,16 +98,16 @@ interface BusStationDao {
     @Query("DELETE FROM bus_station WHERE id = :id")
     suspend fun deleteById(id: Long)
 
-    @Query("SELECT * FROM bus_station WHERE lineId = :lineId AND direction = :direction ORDER BY orderIndex ASC")
+    @Query("SELECT * FROM bus_station WHERE lineId = :lineId AND direction = :direction ORDER BY orderIndex ASC, id ASC")
     fun observeByLineAndDirection(lineId: Long, direction: Int): Flow<List<BusStationEntity>>
 
-    @Query("SELECT * FROM bus_station WHERE lineId = :lineId AND direction = :direction ORDER BY orderIndex ASC")
+    @Query("SELECT * FROM bus_station WHERE lineId = :lineId AND direction = :direction ORDER BY orderIndex ASC, id ASC")
     suspend fun getByLineAndDirection(lineId: Long, direction: Int): List<BusStationEntity>
 
-    @Query("SELECT * FROM bus_station WHERE lineId = :lineId ORDER BY direction ASC, orderIndex ASC")
+    @Query("SELECT * FROM bus_station WHERE lineId = :lineId ORDER BY direction ASC, orderIndex ASC, id ASC")
     suspend fun getByLine(lineId: Long): List<BusStationEntity>
 
-    @Query("SELECT * FROM bus_station ORDER BY lineId ASC, direction ASC, orderIndex ASC")
+    @Query("SELECT * FROM bus_station ORDER BY lineId ASC, direction ASC, orderIndex ASC, id ASC")
     suspend fun getAllOnce(): List<BusStationEntity>
 
     @Query("SELECT * FROM bus_station WHERE id = :id")
@@ -154,11 +154,11 @@ interface BusStationDao {
     suspend fun getByIdWithTransfers(id: Long): BusStationWithTransfers?
 
     @Transaction
-    @Query("SELECT * FROM bus_station WHERE lineId = :lineId AND direction = :direction ORDER BY orderIndex ASC")
+    @Query("SELECT * FROM bus_station WHERE lineId = :lineId AND direction = :direction ORDER BY orderIndex ASC, id ASC")
     fun observeWithTransfers(lineId: Long, direction: Int): Flow<List<BusStationWithTransfers>>
 
     @Transaction
-    @Query("SELECT * FROM bus_station WHERE lineId = :lineId AND direction = :direction ORDER BY orderIndex ASC")
+    @Query("SELECT * FROM bus_station WHERE lineId = :lineId AND direction = :direction ORDER BY orderIndex ASC, id ASC")
     suspend fun getWithTransfers(lineId: Long, direction: Int): List<BusStationWithTransfers>
 }
 
@@ -224,13 +224,13 @@ interface MetroStationDao {
     @Query("DELETE FROM metro_station WHERE id = :id")
     suspend fun deleteById(id: Long)
 
-    @Query("SELECT * FROM metro_station WHERE lineId = :lineId ORDER BY orderIndex ASC")
+    @Query("SELECT * FROM metro_station WHERE lineId = :lineId ORDER BY orderIndex ASC, id ASC")
     fun observeByLine(lineId: Long): Flow<List<MetroStationEntity>>
 
-    @Query("SELECT * FROM metro_station WHERE lineId = :lineId ORDER BY orderIndex ASC")
+    @Query("SELECT * FROM metro_station WHERE lineId = :lineId ORDER BY orderIndex ASC, id ASC")
     suspend fun getByLine(lineId: Long): List<MetroStationEntity>
 
-    @Query("SELECT * FROM metro_station ORDER BY lineId ASC, orderIndex ASC")
+    @Query("SELECT * FROM metro_station ORDER BY lineId ASC, orderIndex ASC, id ASC")
     suspend fun getAllOnce(): List<MetroStationEntity>
 
     @Query("SELECT * FROM metro_station WHERE id = :id")
@@ -243,7 +243,7 @@ interface MetroStationDao {
     suspend fun updateOrder(id: Long, orderIndex: Int)
 
     @Transaction
-    @Query("SELECT * FROM metro_station WHERE lineId = :lineId ORDER BY orderIndex ASC")
+    @Query("SELECT * FROM metro_station WHERE lineId = :lineId ORDER BY orderIndex ASC, id ASC")
     fun observeWithEntrances(lineId: Long): Flow<List<MetroStationWithEntrances>>
 
     @Transaction

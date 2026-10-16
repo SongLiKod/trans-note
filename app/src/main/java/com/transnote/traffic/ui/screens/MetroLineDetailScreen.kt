@@ -58,6 +58,7 @@ import com.transnote.traffic.ui.components.TransNoteCard
 import com.transnote.traffic.ui.components.TransNoteTopBar
 import com.transnote.traffic.ui.theme.TransNoteTheme
 import com.transnote.traffic.utils.CoordinateUtils
+import com.transnote.traffic.utils.StationNameParser
 import com.transnote.traffic.viewmodel.MetroLineDetailViewModel
 import com.transnote.traffic.viewmodel.containerViewModelFactory
 
@@ -324,10 +325,7 @@ fun MetroLineDetailScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    batchText.split(Regex("[\\n、,，→>]+"))
-                        .map { it.trim() }
-                        .filter { it.isNotEmpty() }
-                        .forEach { viewModel.addStation(it) }
+                    viewModel.addStations(StationNameParser.parse(batchText))
                     showBatchAdd = false
                 }) { Text("添加") }
             },

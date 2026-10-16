@@ -20,6 +20,8 @@ import com.transnote.traffic.utils.SearchMatcher
 import com.transnote.traffic.utils.SearchResult
 import com.transnote.traffic.utils.SearchResultType
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /** 城市内已标注坐标的站点（用于地图内搜索与默认中心定位） */
 data class CityStation(
@@ -40,6 +42,13 @@ class TransNoteRepository(
     val backupManager: BackupManager
 ) {
     private val db: AppDatabase get() = databaseProvider()
+
+    /**
+     * 站点批量写入串行锁。
+     * 批量添加若并发执行，会同时读到相同的 orderIndex 起点而产生重复序号，导致顺序错乱，
+     * 因此这里统一串行化「读取最大序号 + 写入」的整个过程。
+     */
+    private val stationWriteMutex = Mutex()
 
     // ================= 城市 =================
 
@@ -162,19 +171,23 @@ class TransNoteRepository(
         }
 
     /** 批量新增站点（OCR 结果一次导入，自动递增 orderIndex） */
-    suspend fun addBusStations(lineId: Long, direction: Int, names: List<String>): Int {
-        val start = db.busStationDao().getByLineAndDirection(lineId, direction).size
-        val list = names.mapIndexed { index, name ->
-            BusStationEntity(
-                lineId = lineId,
-                direction = direction,
-                orderIndex = start + index,
-                name = name
-            )
+    suspend fun addBusStations(lineId: Long, direction: Int, names: List<String>): Int =
+        stationWriteMutex.withLock {
+            val cleaned = names.map { it.trim() }.filter { it.isNotEmpty() }
+            if (cleaned.isEmpty()) return@withLock 0
+            val existing = db.busStationDao().getByLineAndDirection(lineId, direction)
+            val start = (existing.maxOfOrNull { it.orderIndex } ?: -1) + 1
+            val list = cleaned.mapIndexed { index, name ->
+                BusStationEntity(
+                    lineId = lineId,
+                    direction = direction,
+                    orderIndex = start + index,
+                    name = name
+                )
+            }
+            db.busStationDao().insertAll(list)
+            list.size
         }
-        db.busStationDao().insertAll(list)
-        return list.size
-    }
 
     suspend fun deleteBusStation(station: BusStationEntity) {
         station.imagePaths.forEach { imageStorage.deleteImage(it) }
@@ -265,14 +278,18 @@ class TransNoteRepository(
             db.metroStationDao().update(station); station.id
         }
 
-    suspend fun addMetroStations(lineId: Long, names: List<String>): Int {
-        val start = db.metroStationDao().getByLine(lineId).size
-        val list = names.mapIndexed { index, name ->
-            MetroStationEntity(lineId = lineId, orderIndex = start + index, name = name)
+    suspend fun addMetroStations(lineId: Long, names: List<String>): Int =
+        stationWriteMutex.withLock {
+            val cleaned = names.map { it.trim() }.filter { it.isNotEmpty() }
+            if (cleaned.isEmpty()) return@withLock 0
+            val existing = db.metroStationDao().getByLine(lineId)
+            val start = (existing.maxOfOrNull { it.orderIndex } ?: -1) + 1
+            val list = cleaned.mapIndexed { index, name ->
+                MetroStationEntity(lineId = lineId, orderIndex = start + index, name = name)
+            }
+            db.metroStationDao().insertAll(list)
+            list.size
         }
-        db.metroStationDao().insertAll(list)
-        return list.size
-    }
 
     suspend fun deleteMetroStation(station: MetroStationEntity) {
         station.imagePaths.forEach { imageStorage.deleteImage(it) }
