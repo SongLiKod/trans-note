@@ -11,4 +11,8 @@
     <files-path
         name="images"
         path="images/" />
+    <!-- 应用内更新下载的安装包 -->
+    <cache-path
+        name="updates"
+        path="updates/" />
 </paths>

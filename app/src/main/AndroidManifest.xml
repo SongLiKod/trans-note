@@ -15,6 +15,8 @@
     <!-- 地图瓦片加载（业务逻辑全部离线，仅瓦片需要网络） -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 应用内更新：安装从 GitHub Release 下载的 APK -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <uses-feature
         android:name="android.hardware.camera.any"

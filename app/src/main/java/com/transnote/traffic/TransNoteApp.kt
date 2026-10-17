@@ -8,6 +8,7 @@ import com.transnote.traffic.data.file.BackupManager
 import com.transnote.traffic.data.file.ImageStorage
 import com.transnote.traffic.repository.TransNoteRepository
 import com.transnote.traffic.utils.ThemeManager
+import com.transnote.traffic.utils.UpdateManager
 import org.osmdroid.config.Configuration
 
 /**
@@ -22,6 +23,8 @@ class TransNoteApp : Application() {
         super.onCreate()
         container = AppContainer(this)
         initOsmdroid()
+        // 启动时后台静默检查 GitHub Release 是否有新版，有则由根容器弹出更新弹窗
+        container.updateManager.checkOnStartup()
     }
 
     /**
@@ -49,6 +52,8 @@ class AppContainer(private val app: Context) {
     val imageStorage: ImageStorage by lazy { ImageStorage(app) }
     val backupManager: BackupManager by lazy { BackupManager(app) }
     val themeManager: ThemeManager by lazy { ThemeManager(app) }
+    /** 应用内更新：检查 GitHub Release / 下载安装包 / 调起安装 */
+    val updateManager: UpdateManager by lazy { UpdateManager(app) }
     val repository: TransNoteRepository by lazy {
         TransNoteRepository(databaseProvider, imageStorage, backupManager)
     }

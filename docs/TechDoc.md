@@ -94,7 +94,7 @@ com.transnote.traffic
 ├── data
 │   ├── database           // Room Entity、DAO、Database
 │   └── file               // 图片读写、ZIP备份工具
-├── utils                  // OCR、搜索、坐标、拖拽、通用工具类
+├── utils                  // OCR、搜索、坐标、拖拽、应用内更新（GitHub Release）、通用工具类
 └── MainActivity.kt        // APP入口，挂载Compose
 ```
 
@@ -103,7 +103,7 @@ com.transnote.traffic
 2. ML Kit离线OCR首次安装自动下载离线语言包，下载完成后完全离线识别；
 3. 地图瓦片需要网络；如果要求完全断网使用，替换为离线瓦片地图；
 4. 不添加任何埋点、统计、广告、推送SDK，保证纯净工具；
-5. 申请必要权限：相机、读取相册、文件访问权限、定位（地图打点用）。
+5. 申请必要权限：相机、读取相册、文件访问权限、定位（地图打点用）、安装未知应用（应用内更新下载的新版 APK 安装）。
 
 ## 8. 版本迭代计划
 一期（最小可用版本）
@@ -120,6 +120,7 @@ com.transnote.traffic
 
 三期（体验优化）
 - ZIP本地备份导入导出
+- 应用内更新：启动检查GitHub Release新版，软件内下载并安装
 - 线路收藏、置顶、分组管理
 - 站点拖拽排序、批量编辑
 - UI动画、细节交互优化

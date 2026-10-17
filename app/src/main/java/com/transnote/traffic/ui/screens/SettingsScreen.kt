@@ -28,6 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -57,6 +58,7 @@ import com.transnote.traffic.ui.components.TransNoteCard
 import com.transnote.traffic.ui.components.TransNoteTopBar
 import com.transnote.traffic.ui.theme.TransNoteTheme
 import com.transnote.traffic.utils.ThemeMode
+import com.transnote.traffic.utils.UpdateState
 import com.transnote.traffic.viewmodel.SettingsViewModel
 import com.transnote.traffic.viewmodel.containerViewModelFactory
 import kotlinx.coroutines.launch
@@ -87,6 +89,9 @@ fun SettingsScreen(
         .collectAsStateWithLifecycle(initialValue = true)
     val showPassingLines by container.themeManager.showPassingLines
         .collectAsStateWithLifecycle(initialValue = true)
+
+    // 应用内更新（检查 GitHub Release / 下载 / 安装），与全局更新弹窗共享同一状态
+    val updateState by container.updateManager.state.collectAsStateWithLifecycle()
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
@@ -297,6 +302,102 @@ fun SettingsScreen(
                         onClick = viewModel::refreshStats,
                         shape = MaterialTheme.shapes.small
                     ) { Text("刷新统计") }
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+            SectionTitle("应用更新")
+            TransNoteCard {
+                Column {
+                    InfoRow("当前版本", BuildConfig.VERSION_NAME)
+                    Spacer(Modifier.height(4.dp))
+                    when (val s = updateState) {
+                        UpdateState.Idle -> Text(
+                            "尚未检查",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TransNoteTheme.colors.hintText
+                        )
+                        UpdateState.Checking -> Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.width(20.dp).height(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "正在检查更新…",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TransNoteTheme.colors.hintText
+                            )
+                        }
+                        UpdateState.UpToDate -> Text(
+                            "已是最新版本",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TransNoteTheme.colors.success
+                        )
+                        is UpdateState.Available -> Text(
+                            "发现新版本 v${s.info.versionName}，点击「立即更新」查看",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        is UpdateState.Downloading -> {
+                            if (s.percent in 0..100) {
+                                LinearProgressIndicator(
+                                    progress = { s.percent / 100f },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            } else {
+                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                if (s.percent >= 0) "正在下载 v${s.info.versionName}…（${s.percent}%）"
+                                else "正在下载 v${s.info.versionName}…",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TransNoteTheme.colors.hintText
+                            )
+                        }
+                        is UpdateState.Ready -> Text(
+                            "新版本 v${s.info.versionName} 已下载，点击「立即更新」继续安装",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TransNoteTheme.colors.success
+                        )
+                        is UpdateState.Failed -> Text(
+                            "更新失败：${s.message}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TransNoteTheme.colors.danger
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = container.updateManager::check,
+                            enabled = updateState !is UpdateState.Checking &&
+                                updateState !is UpdateState.Downloading,
+                            shape = MaterialTheme.shapes.small
+                        ) { Text("检查更新") }
+                        when (val s = updateState) {
+                            is UpdateState.Available,
+                            is UpdateState.Ready -> Button(
+                                onClick = container.updateManager::showUpdateDialog,
+                                shape = MaterialTheme.shapes.small
+                            ) { Text("立即更新") }
+
+                            is UpdateState.Failed -> if (s.info != null) {
+                                Button(
+                                    onClick = container.updateManager::showUpdateDialog,
+                                    shape = MaterialTheme.shapes.small
+                                ) { Text("重试下载") }
+                            }
+
+                            else -> Unit
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "启动应用时会自动检查 GitHub Release，发现新版后可在软件内下载并更新，无需离开应用。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TransNoteTheme.colors.hintText
+                    )
                 }
             }
 

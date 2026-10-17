@@ -42,6 +42,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.transnote.traffic.AppContainer
+import com.transnote.traffic.ui.components.UpdateDialog
 import com.transnote.traffic.ui.navigation.Routes
 import com.transnote.traffic.ui.screens.BusLineDetailScreen
 import com.transnote.traffic.ui.screens.BusStationDetailScreen
@@ -55,6 +56,7 @@ import com.transnote.traffic.ui.screens.SearchScreen
 import com.transnote.traffic.ui.screens.SettingsScreen
 import com.transnote.traffic.ui.theme.TransNoteTheme
 import com.transnote.traffic.utils.ThemeMode
+import com.transnote.traffic.utils.showInDialog
 import com.transnote.traffic.viewmodel.HomeTab
 import com.transnote.traffic.viewmodel.LineType
 
@@ -306,6 +308,17 @@ fun TransNoteRoot(
                     }
                 },
                 modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+
+        // 应用内更新弹窗：启动检查 / 手动检查发现新版后全局展示，覆盖在任意页面之上
+        val updateState by container.updateManager.state.collectAsStateWithLifecycle()
+        val updateDialogVisible by container.updateManager.dialogVisible.collectAsStateWithLifecycle()
+        if (updateDialogVisible && updateState.showInDialog) {
+            UpdateDialog(
+                state = updateState,
+                updateManager = container.updateManager,
+                onDismiss = { container.updateManager.dismissDialog() }
             )
         }
     }
